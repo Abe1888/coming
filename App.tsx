@@ -563,6 +563,158 @@ const createSignTexture = (text: string) => {
     return tex;
 };
 
+const createTelematicsTexture = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 1024;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.Texture();
+
+  // Transparent background (no fill)
+  ctx.clearRect(0, 0, 1024, 1024);
+
+  // Black background with 50% transparency inside main border (80, 80, 864, 864)
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(80, 80, 864, 864);
+
+  // Corner brackets (outer frame) - BLACK
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 4;
+  // Top-left
+  ctx.beginPath();
+  ctx.moveTo(60, 120); ctx.lineTo(60, 60); ctx.lineTo(120, 60);
+  ctx.stroke();
+  // Top-right
+  ctx.beginPath();
+  ctx.moveTo(904, 60); ctx.lineTo(964, 60); ctx.lineTo(964, 120);
+  ctx.stroke();
+  // Bottom-left
+  ctx.beginPath();
+  ctx.moveTo(60, 904); ctx.lineTo(60, 964); ctx.lineTo(120, 964);
+  ctx.stroke();
+  // Bottom-right
+  ctx.beginPath();
+  ctx.moveTo(904, 964); ctx.lineTo(964, 964); ctx.lineTo(964, 904);
+  ctx.stroke();
+
+  // Main border (inner frame line) - BLACK
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(80, 80, 864, 864);
+
+  // Header divider line
+  ctx.strokeStyle = '#ff0000';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(100, 240);
+  ctx.lineTo(924, 240);
+  ctx.stroke();
+
+  // Create texture first
+  const texture = new THREE.CanvasTexture(canvas);
+  
+  // Load and draw logo in header - larger, centered
+  const logo = new Image();
+  logo.src = '/Logo-white.png'; // Using Logo-white.png as specified
+  logo.crossOrigin = 'anonymous'; // Enable CORS for proper image loading
+  logo.onload = () => {
+    // Draw logo exactly as it is, no effects
+    ctx.drawImage(logo, 200, 110, 600, 100); // x, y, width, height
+    texture.needsUpdate = true; // Update texture after logo loads
+  };
+
+  // Status dots (top right)
+  ctx.fillStyle = '#ff0000';
+  ctx.beginPath(); ctx.arc(850, 150, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(880, 150, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(910, 150, 8, 0, Math.PI * 2); ctx.fill();
+
+  // Main title
+  ctx.font = 'bold 70px Arial';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('ADVANCED', 120, 330);
+  
+  ctx.font = 'bold 70px Arial';
+  ctx.fillStyle = '#ff0000';
+  ctx.fillText('TELEMATICS', 120, 400);
+
+  // Description
+  ctx.font = '20px monospace';
+  ctx.fillStyle = '#888888';
+  ctx.fillText('Real-time vehicle data transmission with multi-protocol', 120, 460);
+  ctx.fillText('support. Cloud-ready architecture for seamless fleet', 120, 490);
+  ctx.fillText('management integration.', 120, 520);
+
+  // Status boxes with dark background
+  const drawStatusBox = (x: number, y: number, label: string, value: string) => {
+    // Dark box background
+    ctx.fillStyle = '#1a0000';
+    ctx.fillRect(x, y, 220, 90);
+    
+    // Box border
+    ctx.strokeStyle = '#660000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, 220, 90);
+    
+    // Label
+    ctx.font = '16px monospace';
+    ctx.fillStyle = '#ff0000';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x + 110, y + 30);
+    
+    // Value
+    ctx.font = 'bold 36px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(value, x + 110, y + 70);
+    ctx.textAlign = 'left';
+  };
+
+  drawStatusBox(120, 570, 'STATUS', 'ONLINE');
+  drawStatusBox(370, 570, 'SIGNAL', '98%');
+  drawStatusBox(620, 570, 'LATENCY', '12ms');
+
+  // Connector line from latency box (dashed)
+  ctx.strokeStyle = '#ff0000';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 4]);
+  ctx.beginPath();
+  ctx.moveTo(840, 615);
+  ctx.lineTo(920, 615);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Info rows with darker styling
+  const drawInfoRow = (y: number, label: string, value: string) => {
+    ctx.font = '22px monospace';
+    ctx.fillStyle = '#555555';
+    ctx.fillText(label, 120, y);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'right';
+    ctx.fillText(value, 900, y);
+    ctx.textAlign = 'left';
+  };
+
+  drawInfoRow(720, 'CONNECTIVITY', 'CAN / RS232');
+  drawInfoRow(770, 'UPDATE RATE', '1Hz - 10Hz');
+  drawInfoRow(820, 'PROTOCOL', 'Modbus RTU');
+  drawInfoRow(870, 'CLOUD READY', 'API / MQTT');
+
+  // Footer
+  ctx.font = '18px monospace';
+  ctx.fillStyle = '#ff0000';
+  ctx.fillText('TRANSLINK SYSTEMS', 120, 930);
+  
+  // Footer indicator bars (signal strength style)
+  ctx.fillStyle = '#ff0000';
+  ctx.fillRect(850, 910, 12, 25);
+  ctx.fillRect(870, 900, 12, 35);
+  ctx.fillRect(890, 890, 12, 45);
+  ctx.fillRect(910, 880, 12, 55);
+
+  return texture;
+};
+
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
   const audioSysRef = useRef<AudioSystem | null>(null);
@@ -571,13 +723,11 @@ export default function App() {
   const headPathRef = useRef<SVGPathElement>(null);
   const probePathRef = useRef<SVGPathElement>(null);
   const filterPathRef = useRef<SVGPathElement>(null);
-  const telematicsPathRef = useRef<SVGPathElement>(null);
 
   // Refs for SVG Dot markers (start and end of lines)
   const headDotRef = useRef<SVGCircleElement>(null);
   const probeDotRef = useRef<SVGCircleElement>(null);
   const filterDotRef = useRef<SVGCircleElement>(null);
-  const telematicsDotRef = useRef<SVGCircleElement>(null);
   
   const [, setLoading] = useState(true);
   const [activePhase, setActivePhase] = useState(0);
@@ -603,15 +753,7 @@ export default function App() {
     rotateY: 0 
   });
 
-  // Telematics card positioning state (follows truck physics)
-  const [telematicsCardPosition, setTelematicsCardPosition] = useState({ 
-    x: 0, 
-    y: 0, 
-    visible: false, 
-    scale: 1, 
-    rotateX: 0, 
-    rotateY: 0 
-  });
+
 
   if (!audioSysRef.current) {
     audioSysRef.current = new AudioSystem();
@@ -980,6 +1122,24 @@ export default function App() {
         trailer.add(createMarkerLight(-2.65, 8.5, z)); trailer.add(createMarkerLight(2.65, 8.5, z));
         trailer.add(createMarkerLight(-2.65, 1.5, z)); trailer.add(createMarkerLight(2.65, 1.5, z));
     }
+
+    // --- TELEMATICS DISPLAY ON TRAILER ---
+    const telematicsTex = createTelematicsTexture();
+    const telematicsMat = new THREE.MeshBasicMaterial({ 
+      map: telematicsTex,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+
+    // Left Side Display - Centered on body
+    const telematicsPlaneL = new THREE.Mesh(
+      new THREE.PlaneGeometry(8, 8), // Square display
+      telematicsMat
+    );
+    telematicsPlaneL.position.set(-2.605, 4.8, 0); // X: left wall, Y: center height, Z: center of trailer
+    telematicsPlaneL.rotation.y = -Math.PI / 2; // Face outward (left)
+    trailer.add(telematicsPlaneL);
 
     // -- FUEL TANK & SENSOR --
     const tankGroup = new THREE.Group();
@@ -1394,56 +1554,6 @@ export default function App() {
             setCardPosition(prev => ({ ...prev, visible: false }));
         }
 
-        // --- UPDATE TELEMATICS CARD POSITION WITH TRUCK PHYSICS (Phase 0) ---
-        if (currentPhase === 0 && scrollRef.current > 0.03) {
-            // Position card relative to truck body center
-            const truckPos = new THREE.Vector3();
-            truck.getWorldPosition(truckPos);
-            
-            // Get truck's world rotation
-            const truckWorldQuat = new THREE.Quaternion();
-            truck.getWorldQuaternion(truckWorldQuat);
-            
-            // Create offset - further to the left and up from truck center
-            const offset = new THREE.Vector3(-6.0, 2.0, 0); // Further left and up
-            
-            // Apply truck's rotation to offset (so it moves with the truck)
-            offset.applyQuaternion(truckWorldQuat);
-            
-            // Add offset to truck position
-            truckPos.add(offset);
-            
-            // Project to screen space
-            const projected = truckPos.clone().project(camera);
-            
-            const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
-            const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
-            
-            // Check if position is in front of camera and within viewport
-            const isVisible = projected.z < 1 && 
-                             x > 100 && x < window.innerWidth - 100 &&
-                             y > 100 && y < window.innerHeight - 100;
-            
-            // Calculate scale based on distance
-            const distance = camera.position.distanceTo(truckPos);
-            const scale = Math.max(0.7, Math.min(1.0, 12 / distance));
-            
-            // No perspective rotation - keep card flat to camera
-            const rotateY = 0; // Keep card facing camera directly
-            const rotateX = 0; // No tilt
-            
-            setTelematicsCardPosition({ 
-                x, 
-                y, 
-                visible: isVisible, 
-                scale,
-                rotateX,
-                rotateY
-            });
-        } else {
-            setTelematicsCardPosition(prev => ({ ...prev, visible: false }));
-        }
-
         // --- DYNAMIC SVG UPDATE ---
         if (currentPhase === 2) {
             // Only update paths when in Exploded/Detail view
@@ -1452,46 +1562,6 @@ export default function App() {
             if(filterPathRef.current && filterDotRef.current) updatePath(cageGroup, filterPathRef.current, filterDotRef.current, 0.75);
         }
         
-        // Update telematics card path in Phase 0 (when card is visible)
-        if (currentPhase === 0 && scrollRef.current > 0.03 && telematicsCardPosition.visible) {
-            if(telematicsPathRef.current && telematicsDotRef.current && wheels.length > 0) {
-                // Connect from front left wheel to card position
-                const frontLeftWheel = wheels[0]; // First wheel in the array
-                
-                // Get wheel position
-                const wheelPos = new THREE.Vector3();
-                frontLeftWheel.getWorldPosition(wheelPos);
-                
-                // Project to screen space
-                const projected = wheelPos.clone().project(camera);
-                const startX = (projected.x * 0.5 + 0.5) * window.innerWidth;
-                const startY = (-projected.y * 0.5 + 0.5) * window.innerHeight;
-                
-                // End point is the card position (only if valid)
-                const endX = telematicsCardPosition.x;
-                const endY = telematicsCardPosition.y;
-                
-                // Only draw path if card position is valid and reasonable
-                if (endX > 100 && endY > 100 && endX < window.innerWidth - 100 && endY < window.innerHeight - 100) {
-                    // Create curved path with better control point
-                    const midX = startX + (endX - startX) * 0.5;
-                    const midY = startY + (endY - startY) * 0.5;
-                    const pathData = `M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`;
-                    
-                    // Update SVG elements
-                    telematicsPathRef.current.setAttribute('d', pathData);
-                    telematicsDotRef.current.setAttribute('cx', String(startX));
-                    telematicsDotRef.current.setAttribute('cy', String(startY));
-                } else {
-                    // Hide path if card position is invalid
-                    telematicsPathRef.current.setAttribute('d', '');
-                }
-            }
-        } else if (telematicsPathRef.current) {
-            // Hide path when not in Phase 0 or not scrolled enough
-            telematicsPathRef.current.setAttribute('d', '');
-        }
-
         renderer.render(scene, camera);
         animationFrameId = requestAnimationFrame(animate);
     };
@@ -1712,25 +1782,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* --- SVG CONNECTOR FOR TELEMATICS CARD --- */}
-      <div className={`fixed inset-0 z-15 pointer-events-none transition-opacity duration-500 ${scrollPast3 && activePhase === 0 ? 'opacity-100' : 'opacity-0'}`}>
-        <svg className="absolute inset-0 w-full h-full overflow-visible">
-          <defs>
-            <filter id="glowTelematics">
-              <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-              <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-          </defs>
-          
-          {/* Connector from truck to telematics card */}
-          <path ref={telematicsPathRef} fill="none" stroke="#ff4444" strokeWidth="2" strokeDasharray="4 2" filter="url(#glowTelematics)" />
-          <circle ref={telematicsDotRef} r="4" fill="#ff4444" className="animate-pulse" />
-        </svg>
-      </div>
-
       {/* --- PHASE 0: INTRO/VELOCITY (Hidden after 3% scroll) --- */}
       <div className={`fixed bottom-20 left-10 md:left-20 transition-all duration-[1500ms] ease-out z-20 pointer-events-none
         ${activePhase === 0 && !scrollPast3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
@@ -1742,53 +1793,6 @@ export default function App() {
          <p className="max-w-md text-gray-300 bg-black/80 backdrop-blur-md p-6 border-l-2 border-red-600 text-sm leading-relaxed animate-[fadeInUp_1.8s_ease-out]">
             High-precision fuel level monitoring with ±1% static accuracy. Translink Fuel provides real-time tracking, theft detection, and seamless fleet integration for comprehensive fuel management.
          </p>
-      </div>
-
-      {/* --- NEW CARD: APPEARS AFTER 3% SCROLL (Follows truck physics) --- */}
-      <div 
-        className={`fixed z-20 pointer-events-none
-        ${scrollPast3 && activePhase === 0 && telematicsCardPosition.visible ? 'opacity-100' : 'opacity-0'}`}
-        style={{
-          left: `${telematicsCardPosition.x}px`,
-          top: `${telematicsCardPosition.y}px`,
-          transform: `translate(-50%, -50%) scale(${telematicsCardPosition.scale}) perspective(1000px) rotateY(${telematicsCardPosition.rotateY}deg) rotateX(${telematicsCardPosition.rotateX}deg)`,
-          transformStyle: 'preserve-3d',
-          transition: 'opacity 300ms ease-out'
-        }}
-      >
-         <div className="bg-white/70 backdrop-blur-md border-t-2 border-red-600 p-6 w-[380px] relative shadow-2xl shadow-red-900/20">
-            <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-red-500"></div>
-            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-red-500"></div>
-            
-            <div className="flex items-center gap-3 mb-4">
-                <Activity className="text-red-500 animate-pulse" />
-                <span className="text-red-500 text-xs tracking-[0.3em] font-mono">SYSTEM STATUS</span>
-            </div>
-
-            <h3 className="text-2xl font-black text-gray-900 mb-3 tracking-tight">ADVANCED TELEMATICS</h3>
-            <p className="text-gray-700 text-sm leading-relaxed mb-4 font-mono">
-                Real-time data transmission with multi-protocol support. Cloud-ready architecture for seamless fleet management integration.
-            </p>
-
-            <div className="grid grid-cols-2 gap-3 border-t border-gray-300 pt-4">
-                <div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Connectivity</div>
-                    <div className="text-gray-900 font-bold text-sm">CAN / RS232</div>
-                </div>
-                <div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Update Rate</div>
-                    <div className="text-gray-900 font-bold text-sm">1Hz - 10Hz</div>
-                </div>
-                <div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Protocol</div>
-                    <div className="text-gray-900 font-bold text-sm">Modbus RTU</div>
-                </div>
-                <div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Cloud Ready</div>
-                    <div className="text-gray-900 font-bold text-sm">API / MQTT</div>
-                </div>
-            </div>
-         </div>
       </div>
 
       {/* --- PHASE 1: SENSOR HEAD FOCUS --- */}
