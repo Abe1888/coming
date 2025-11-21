@@ -56,8 +56,8 @@ class AudioSystem {
     
     if (this.masterGain && this.ctx) {
         const now = this.ctx.currentTime;
-        // Smooth fade for mute/unmute
-        this.masterGain.gain.setTargetAtTime(isMuted ? 0 : 0.4, now, 0.2);
+        // Smooth fade for mute/unmute - reduced volume to prevent distortion
+        this.masterGain.gain.setTargetAtTime(isMuted ? 0 : 0.25, now, 0.3);
     }
   }
 
@@ -112,7 +112,7 @@ class AudioSystem {
           filter.frequency.value = 100; // Very low sub-bass
 
           const gain = this.ctx.createGain();
-          gain.gain.value = 0.8;
+          gain.gain.value = 0.4; // Reduced to prevent distortion
 
           src.connect(filter);
           filter.connect(gain);
@@ -172,7 +172,7 @@ class AudioSystem {
       roadFilter.frequency.value = 350;
       
       const roadGain = this.ctx.createGain();
-      roadGain.gain.value = 0.4;
+      roadGain.gain.value = 0.2; // Reduced road noise
 
       roadSrc.connect(roadFilter);
       roadFilter.connect(roadGain);
@@ -189,10 +189,10 @@ class AudioSystem {
       const windFilter = this.ctx.createBiquadFilter();
       windFilter.type = 'bandpass';
       windFilter.frequency.value = 600; // Lowered from 800 Hz
-      windFilter.Q.value = 0.5; // Reduced from 1.0 to eliminate whistle
+      windFilter.Q.value = 0.3; // Further reduced to eliminate whistle
 
       const windGain = this.ctx.createGain();
-      windGain.gain.value = 0.12; // Slightly reduced volume
+      windGain.gain.value = 0.08; // Further reduced volume
 
       windSrc.connect(windFilter);
       windFilter.connect(windGain);
@@ -300,18 +300,19 @@ class AudioSystem {
   update(time: number) {
       if (!this.ctx || this.ctx.state === 'suspended') return;
       
-      // Modulate Engine Components
+      // Modulate Engine Components - REDUCED for smoother sound
       if (this.engineRefs.pistonLFO) {
-         // Rev subtly up and down
-         this.engineRefs.pistonLFO.frequency.value = 12 + Math.sin(time * 0.5) * 1.5;
+         // Very subtle rev variation
+         this.engineRefs.pistonLFO.frequency.value = 12 + Math.sin(time * 0.3) * 0.5;
       }
       if (this.engineRefs.rumbleFilter) {
-          this.engineRefs.rumbleFilter.frequency.value = 100 + Math.sin(time * 0.2) * 10;
+          // Minimal rumble variation
+          this.engineRefs.rumbleFilter.frequency.value = 100 + Math.sin(time * 0.15) * 5;
       }
 
-      // Modulate Wind/Road Noise (reduced modulation to avoid whistling)
+      // Minimal Wind/Road Noise modulation
       if (this.windRefs.windGain) {
-          this.windRefs.windGain.gain.value = 0.12 + Math.sin(time * 0.3) * 0.03 + Math.sin(time * 1.1) * 0.01;
+          this.windRefs.windGain.gain.value = 0.10 + Math.sin(time * 0.2) * 0.02;
       }
   }
   
@@ -466,36 +467,7 @@ const createCabinTexture = () => {
     return new THREE.CanvasTexture(canvas);
 };
 
-const createLogoTexture = () => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-
-  if (!ctx) return new THREE.Texture();
-
-  ctx.fillStyle = '#100000'; 
-  ctx.fillRect(0,0, 512, 128);
-  
-  ctx.strokeStyle = '#ff3300';
-  ctx.lineWidth = 8;
-  ctx.strokeRect(0,0,512,128);
-
-  ctx.font = 'bold 60px Arial, sans-serif';
-  ctx.fillStyle = '#ffaa00';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('TRANSLINK', 256, 45);
-  
-  ctx.font = '40px Arial, sans-serif';
-  ctx.fillStyle = '#ff3300';
-  ctx.fillText('SOLUTIONS', 256, 95);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  return tex;
-};
-
-const createSensorLabelTexture = () => {
+const createSensorLabelTexture = async () => {
   const width = 512;
   const height = 256;
   const canvas = document.createElement('canvas');
@@ -534,16 +506,12 @@ const createSensorLabelTexture = () => {
   ctx.arc(iconX, iconY + 40, 10, 0, Math.PI*2);
   ctx.fill();
 
-  // 4. Text Area
-  ctx.font = 'bold 52px Michroma, sans-serif';
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('TRANSLINK', 160, 100);
-
+  // 4. Text Area (Logo is now loaded separately as 3D plane)
   ctx.font = 'bold 28px monospace';
   ctx.fillStyle = '#888888';
-  ctx.fillText('SENSOR MODULE // T-800', 160, 160);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('SENSOR MODULE // T-800', 160, 128);
 
   // 5. Technical Markings
   ctx.fillStyle = '#ff4400';
@@ -558,6 +526,7 @@ const createSensorLabelTexture = () => {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.anisotropy = 16;
+  tex.needsUpdate = true;
   return tex;
 };
 
@@ -602,15 +571,18 @@ export default function App() {
   const headPathRef = useRef<SVGPathElement>(null);
   const probePathRef = useRef<SVGPathElement>(null);
   const filterPathRef = useRef<SVGPathElement>(null);
+  const telematicsPathRef = useRef<SVGPathElement>(null);
 
   // Refs for SVG Dot markers (start and end of lines)
   const headDotRef = useRef<SVGCircleElement>(null);
   const probeDotRef = useRef<SVGCircleElement>(null);
   const filterDotRef = useRef<SVGCircleElement>(null);
+  const telematicsDotRef = useRef<SVGCircleElement>(null);
   
   const [, setLoading] = useState(true);
   const [activePhase, setActivePhase] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
+  const [scrollPast3, setScrollPast3] = useState(false);
   
   // Intro screen state
   const [showIntroScreen, setShowIntroScreen] = useState(true);
@@ -623,6 +595,16 @@ export default function App() {
   
   // 3D card positioning state (includes scale and rotation for perspective)
   const [cardPosition, setCardPosition] = useState({ 
+    x: 0, 
+    y: 0, 
+    visible: false, 
+    scale: 1, 
+    rotateX: 0, 
+    rotateY: 0 
+  });
+
+  // Telematics card positioning state (follows truck physics)
+  const [telematicsCardPosition, setTelematicsCardPosition] = useState({ 
     x: 0, 
     y: 0, 
     visible: false, 
@@ -733,7 +715,7 @@ export default function App() {
         side: THREE.DoubleSide
     });
 
-    const markerMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+    const markerMat = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Bright yellow
 
     const railMat = new THREE.MeshPhongMaterial({
         color: 0x220000,
@@ -743,8 +725,14 @@ export default function App() {
     });
     const railWireMat = new THREE.LineBasicMaterial({ color: 0x660000, transparent: true, opacity: 0.3 });
 
-    const sensorLabelTex = createSensorLabelTexture();
-    const sensorLabelMat = new THREE.MeshBasicMaterial({ map: sensorLabelTex });
+    // Create placeholder material, will be updated when logo loads
+    const sensorLabelMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+    
+    // Load sensor label texture asynchronously
+    createSensorLabelTexture().then(tex => {
+      sensorLabelMat.map = tex;
+      sensorLabelMat.needsUpdate = true;
+    });
 
     const grayTankMat = new THREE.MeshBasicMaterial({
       color: 0x555555,
@@ -1031,37 +1019,61 @@ export default function App() {
 
     const extrudeSettings = { depth: 0.25, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2 };
     const headGeo = new THREE.ExtrudeGeometry(headShape, extrudeSettings);
-    const headMat = new THREE.MeshStandardMaterial({ color: 0xff6600, roughness: 0.3, metalness: 0.1 });
+    const headMat = new THREE.MeshBasicMaterial({ 
+      color: 0x8B0000 // Dark red, no glossy effect
+    });
     const head = new THREE.Mesh(headGeo, headMat);
     head.rotation.x = Math.PI / 2; // Align to XZ plane
     head.position.y = 0; 
     sensorHeadGroup.add(head);
 
     // Edge lines for the custom shape
-    const headEdges = new THREE.LineSegments(new THREE.EdgesGeometry(headGeo, 20), new THREE.LineBasicMaterial({ color: 0xcc4400 }));
+    const headEdges = new THREE.LineSegments(new THREE.EdgesGeometry(headGeo, 20), new THREE.LineBasicMaterial({ color: 0xff4444, linewidth: 2 }));
     headEdges.rotation.x = Math.PI / 2;
     sensorHeadGroup.add(headEdges);
 
-    // 2. Recessed Label Panel
+    // 2. Recessed Label Panel (hidden - logo has white background now)
     const labelPlane = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.25), sensorLabelMat);
     labelPlane.rotation.x = -Math.PI / 2;
     labelPlane.rotation.z = Math.PI / 2;
     labelPlane.position.y = 0.03;
+    labelPlane.visible = false; // Hidden since we use white background for logo
     sensorHeadGroup.add(labelPlane);
+
+    // 2b. White Background removed - PNG has transparency
+
+    // 2c. Company Logo Plane (centered on sensor head)
+    const logoLoader = new THREE.TextureLoader();
+    const logoTexture = logoLoader.load('/Logo-white.png', (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+    });
+    const logoMat = new THREE.MeshBasicMaterial({ 
+      map: logoTexture, 
+      transparent: true,
+      alphaTest: 0.1,
+      side: THREE.DoubleSide,
+      depthTest: true
+    });
+    // Use proper aspect ratio for logo (approximately 4:1 for horizontal logo)
+    const logoPlane = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.15), logoMat);
+    logoPlane.rotation.x = -Math.PI / 2;
+    logoPlane.rotation.z = Math.PI / 2;
+    logoPlane.position.y = 0.033; // Directly on sensor head
+    logoPlane.position.x = 0; // Centered
+    sensorHeadGroup.add(logoPlane);
+
+    // 2d. Spotlight for Logo Illumination
+    const logoSpotlight = new THREE.SpotLight(0xffffff, 50, 5, Math.PI / 6, 0.5);
+    logoSpotlight.position.set(0, 2, 0);
+    logoSpotlight.target = sensorHeadGroup;
+    tankGroup.add(logoSpotlight);
 
     // 3. Mounting Flange (Cylinder)
     const flangeGeo = new THREE.CylinderGeometry(0.12, 0.15, 0.1, 16);
     const flange = new THREE.Mesh(flangeGeo, new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7 }));
     flange.position.y = -0.05;
     sensorHeadGroup.add(flange);
-
-    // 4. Bolts
-    for(let i=0; i<4; i++) {
-        const angle = (i/4) * Math.PI * 2 + Math.PI/4;
-        const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.05, 6), new THREE.MeshStandardMaterial({ color: 0x888888 }));
-        bolt.position.set(Math.cos(angle)*0.1, 0.02, Math.sin(angle)*0.1);
-        sensorHeadGroup.add(bolt);
-    }
 
     // PROBE ASSEMBLY
     const probeGroup = new THREE.Group();
@@ -1093,7 +1105,7 @@ export default function App() {
     tankGroup.add(liquid);
 
     const underLight = new THREE.PointLight(0xff0000, 2, 25); underLight.position.set(0, 1, -2); truck.add(underLight);
-    const hlSpotL = new THREE.SpotLight(0xffddaa, 100, 60, 0.6, 0.4); hlSpotL.position.set(-2, 1.5, -12); hlSpotL.target.position.set(-2, 0, -30); truck.add(hlSpotL); truck.add(hlSpotL.target);
+    const hlSpotL = new THREE.SpotLight(0xffff00, 150, 60, 0.6, 0.4); hlSpotL.position.set(-2, 1.5, -12); hlSpotL.target.position.set(-2, 0, -30); truck.add(hlSpotL); truck.add(hlSpotL.target);
     const hlSpotR = hlSpotL.clone(); hlSpotR.position.set(2, 1.5, -12); hlSpotR.target.position.set(2, 0, -30); truck.add(hlSpotR); truck.add(hlSpotR.target);
 
     // --- ANIMATION LOOP ---
@@ -1339,8 +1351,8 @@ export default function App() {
             const truckWorldQuat = new THREE.Quaternion();
             truck.getWorldQuaternion(truckWorldQuat);
             
-            // Create offset - far to the left so it doesn't cover the tank
-            const offset = new THREE.Vector3(-5.5, 1.5, 0); // Further left, slightly up
+            // Create offset - to the right side of the truck
+            const offset = new THREE.Vector3(5.5, 1.5, 0); // Right side, slightly up
             
             // Apply truck's rotation to offset (so it moves with the truck)
             offset.applyQuaternion(truckWorldQuat);
@@ -1382,12 +1394,102 @@ export default function App() {
             setCardPosition(prev => ({ ...prev, visible: false }));
         }
 
+        // --- UPDATE TELEMATICS CARD POSITION WITH TRUCK PHYSICS (Phase 0) ---
+        if (currentPhase === 0 && scrollRef.current > 0.03) {
+            // Position card relative to truck body center
+            const truckPos = new THREE.Vector3();
+            truck.getWorldPosition(truckPos);
+            
+            // Get truck's world rotation
+            const truckWorldQuat = new THREE.Quaternion();
+            truck.getWorldQuaternion(truckWorldQuat);
+            
+            // Create offset - further to the left and up from truck center
+            const offset = new THREE.Vector3(-6.0, 2.0, 0); // Further left and up
+            
+            // Apply truck's rotation to offset (so it moves with the truck)
+            offset.applyQuaternion(truckWorldQuat);
+            
+            // Add offset to truck position
+            truckPos.add(offset);
+            
+            // Project to screen space
+            const projected = truckPos.clone().project(camera);
+            
+            const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+            
+            // Check if position is in front of camera and within viewport
+            const isVisible = projected.z < 1 && 
+                             x > 100 && x < window.innerWidth - 100 &&
+                             y > 100 && y < window.innerHeight - 100;
+            
+            // Calculate scale based on distance
+            const distance = camera.position.distanceTo(truckPos);
+            const scale = Math.max(0.7, Math.min(1.0, 12 / distance));
+            
+            // No perspective rotation - keep card flat to camera
+            const rotateY = 0; // Keep card facing camera directly
+            const rotateX = 0; // No tilt
+            
+            setTelematicsCardPosition({ 
+                x, 
+                y, 
+                visible: isVisible, 
+                scale,
+                rotateX,
+                rotateY
+            });
+        } else {
+            setTelematicsCardPosition(prev => ({ ...prev, visible: false }));
+        }
+
         // --- DYNAMIC SVG UPDATE ---
         if (currentPhase === 2) {
             // Only update paths when in Exploded/Detail view
             if(headPathRef.current && headDotRef.current) updatePath(sensorHeadGroup, headPathRef.current, headDotRef.current, 0.25);
             if(probePathRef.current && probeDotRef.current) updatePath(probeTube, probePathRef.current, probeDotRef.current, 0.50);
             if(filterPathRef.current && filterDotRef.current) updatePath(cageGroup, filterPathRef.current, filterDotRef.current, 0.75);
+        }
+        
+        // Update telematics card path in Phase 0 (when card is visible)
+        if (currentPhase === 0 && scrollRef.current > 0.03 && telematicsCardPosition.visible) {
+            if(telematicsPathRef.current && telematicsDotRef.current && wheels.length > 0) {
+                // Connect from front left wheel to card position
+                const frontLeftWheel = wheels[0]; // First wheel in the array
+                
+                // Get wheel position
+                const wheelPos = new THREE.Vector3();
+                frontLeftWheel.getWorldPosition(wheelPos);
+                
+                // Project to screen space
+                const projected = wheelPos.clone().project(camera);
+                const startX = (projected.x * 0.5 + 0.5) * window.innerWidth;
+                const startY = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+                
+                // End point is the card position (only if valid)
+                const endX = telematicsCardPosition.x;
+                const endY = telematicsCardPosition.y;
+                
+                // Only draw path if card position is valid and reasonable
+                if (endX > 100 && endY > 100 && endX < window.innerWidth - 100 && endY < window.innerHeight - 100) {
+                    // Create curved path with better control point
+                    const midX = startX + (endX - startX) * 0.5;
+                    const midY = startY + (endY - startY) * 0.5;
+                    const pathData = `M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`;
+                    
+                    // Update SVG elements
+                    telematicsPathRef.current.setAttribute('d', pathData);
+                    telematicsDotRef.current.setAttribute('cx', String(startX));
+                    telematicsDotRef.current.setAttribute('cy', String(startY));
+                } else {
+                    // Hide path if card position is invalid
+                    telematicsPathRef.current.setAttribute('d', '');
+                }
+            }
+        } else if (telematicsPathRef.current) {
+            // Hide path when not in Phase 0 or not scrolled enough
+            telematicsPathRef.current.setAttribute('d', '');
         }
 
         renderer.render(scene, camera);
@@ -1400,6 +1502,9 @@ export default function App() {
     const handleScroll = () => {
         const total = document.documentElement.scrollHeight - window.innerHeight;
         const rawScroll = Math.min(Math.max(window.scrollY / total, 0), 1);
+        
+        // Track if scrolled past 3%
+        setScrollPast3(rawScroll > 0.03);
         
         // Store previous scroll value BEFORE updating
         const prevScroll = scrollRef.current;
@@ -1482,46 +1587,55 @@ export default function App() {
       {/* --- INTRO SCREEN --- */}
       {showIntroScreen && (
         <div 
-          className={`fixed inset-0 z-[100] bg-[#1a1f2e] flex flex-col items-center justify-center transition-opacity duration-1000 cursor-pointer ${
+          className={`fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center transition-opacity duration-1000 cursor-pointer ${
             introFadingOut ? 'opacity-0' : 'opacity-100'
           }`}
           onClick={dismissIntroScreen}
           style={{ pointerEvents: introFadingOut ? 'none' : 'auto' }}
         >
           {/* Corner Decorations */}
-          <div className="absolute top-8 left-8 w-12 h-12 border-l-2 border-t-2 border-gray-600"></div>
-          <div className="absolute top-8 right-8 w-12 h-12 border-r-2 border-t-2 border-gray-600"></div>
-          <div className="absolute bottom-8 left-8 w-12 h-12 border-l-2 border-b-2 border-gray-600"></div>
+          <div className="absolute top-8 left-8 w-12 h-12 border-l-2 border-t-2 border-gray-300"></div>
+          <div className="absolute top-8 right-8 w-12 h-12 border-r-2 border-t-2 border-gray-300"></div>
+          <div className="absolute bottom-8 left-8 w-12 h-12 border-l-2 border-b-2 border-gray-300"></div>
           <div className="absolute bottom-8 right-8 w-12 h-12 border-r-2 border-b-2 border-red-600"></div>
           
           {/* Progress Indicators */}
           <div className="absolute top-10 left-1/4 flex gap-8">
-            <div className="w-16 h-1 bg-gray-700"></div>
-            <div className="w-16 h-1 bg-gray-700"></div>
+            <div className="w-16 h-1 bg-gray-300"></div>
+            <div className="w-16 h-1 bg-gray-300"></div>
             <div className="w-16 h-1 bg-red-600"></div>
-            <div className="w-16 h-1 bg-gray-700"></div>
+            <div className="w-16 h-1 bg-gray-300"></div>
           </div>
           
           {/* Main Content */}
           <div className="text-center space-y-8 px-8">
+            {/* Company Logo */}
+            <div className="flex justify-center mb-8">
+              <img 
+                src="/logo.png" 
+                alt="Translink Solutions PLC" 
+                className="h-24 md:h-32 w-auto object-contain"
+              />
+            </div>
+            
             {/* Main Title - Company Name */}
-            <h1 className="text-7xl md:text-8xl font-black tracking-tight leading-none">
+            <h1 className="text-7xl md:text-8xl font-black tracking-tight leading-none text-gray-900">
               TRANSLINK
             </h1>
-            <h1 className="text-6xl md:text-7xl font-black tracking-tight leading-none text-gray-300">
+            <h1 className="text-6xl md:text-7xl font-black tracking-tight leading-none text-gray-700">
               SOLUTIONS PLC
             </h1>
             
             {/* Category */}
-            <div className="text-2xl md:text-3xl tracking-[0.3em] text-gray-400 font-light mt-8">
+            <div className="text-2xl md:text-3xl tracking-[0.3em] text-gray-600 font-light mt-8">
               ADVANCED FLEET TELEMATICS
             </div>
             
             {/* Divider */}
             <div className="flex items-center justify-center gap-4 py-4">
-              <div className="w-32 h-px bg-gray-600"></div>
+              <div className="w-32 h-px bg-gray-400"></div>
               <div className="w-2 h-2 bg-red-600"></div>
-              <div className="w-32 h-px bg-gray-600"></div>
+              <div className="w-32 h-px bg-gray-400"></div>
             </div>
             
             {/* Description */}
@@ -1533,17 +1647,17 @@ export default function App() {
             <div className="flex items-center justify-center gap-8 pt-8 text-xs tracking-wider">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></div>
-                <span className="text-gray-400">SYSTEM ONLINE</span>
+                <span className="text-gray-600">SYSTEM ONLINE</span>
               </div>
-              <div className="text-gray-600">|</div>
+              <div className="text-gray-400">|</div>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></div>
-                <span className="text-gray-400">FLEET ACTIVE</span>
+                <span className="text-gray-600">FLEET ACTIVE</span>
               </div>
-              <div className="text-gray-600">|</div>
+              <div className="text-gray-400">|</div>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-red-600 rounded-full"></div>
-                <span className="text-gray-400">TELEMETRY READY</span>
+                <span className="text-gray-600">TELEMETRY READY</span>
               </div>
             </div>
             
@@ -1555,20 +1669,24 @@ export default function App() {
           
           {/* Bottom Decorations */}
           <div className="absolute bottom-10 left-8 flex gap-2">
-            <div className="w-3 h-3 border border-gray-700"></div>
-            <div className="w-3 h-3 border border-gray-700"></div>
-            <div className="w-3 h-3 border border-gray-700 bg-gray-700"></div>
+            <div className="w-3 h-3 border border-gray-300"></div>
+            <div className="w-3 h-3 border border-gray-300"></div>
+            <div className="w-3 h-3 border border-gray-300 bg-gray-300"></div>
           </div>
         </div>
       )}
       
       <div ref={mountRef} className="fixed top-0 left-0 w-full h-screen z-0" />
-      <div className="fixed inset-0 z-10 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.03),rgba(255,0,0,0.01),rgba(255,0,0,0.03))] bg-[length:100%_4px,6px_100%]" />
       
       {/* --- TOP BAR --- */}
       <div className="fixed top-0 left-0 w-full z-20 p-6 flex justify-between items-start pointer-events-none">
         <div className="border-l-4 border-red-600 pl-6 bg-gradient-to-r from-black/90 to-transparent pr-20 py-3 clip-path-slant">
             <div className="flex items-center gap-3">
+                <img 
+                  src="/Logo-white.png" 
+                  alt="Translink" 
+                  className="h-10 w-auto object-contain"
+                />
                 <Activity className="text-red-500 animate-pulse" />
                 <div>
                     <h1 className="text-3xl font-black tracking-tighter italic leading-none">
@@ -1594,9 +1712,28 @@ export default function App() {
         </div>
       </div>
 
-      {/* --- PHASE 0: INTRO/VELOCITY --- */}
+      {/* --- SVG CONNECTOR FOR TELEMATICS CARD --- */}
+      <div className={`fixed inset-0 z-15 pointer-events-none transition-opacity duration-500 ${scrollPast3 && activePhase === 0 ? 'opacity-100' : 'opacity-0'}`}>
+        <svg className="absolute inset-0 w-full h-full overflow-visible">
+          <defs>
+            <filter id="glowTelematics">
+              <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          
+          {/* Connector from truck to telematics card */}
+          <path ref={telematicsPathRef} fill="none" stroke="#ff4444" strokeWidth="2" strokeDasharray="4 2" filter="url(#glowTelematics)" />
+          <circle ref={telematicsDotRef} r="4" fill="#ff4444" className="animate-pulse" />
+        </svg>
+      </div>
+
+      {/* --- PHASE 0: INTRO/VELOCITY (Hidden after 3% scroll) --- */}
       <div className={`fixed bottom-20 left-10 md:left-20 transition-all duration-[1500ms] ease-out z-20 pointer-events-none
-        ${activePhase === 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
+        ${activePhase === 0 && !scrollPast3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
          <h2 className="text-8xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-800 mb-0 leading-none animate-[fadeInUp_1.2s_ease-out]">
             REAL-TIME
          </h2>
@@ -1605,6 +1742,53 @@ export default function App() {
          <p className="max-w-md text-gray-300 bg-black/80 backdrop-blur-md p-6 border-l-2 border-red-600 text-sm leading-relaxed animate-[fadeInUp_1.8s_ease-out]">
             High-precision fuel level monitoring with ±1% static accuracy. Translink Fuel provides real-time tracking, theft detection, and seamless fleet integration for comprehensive fuel management.
          </p>
+      </div>
+
+      {/* --- NEW CARD: APPEARS AFTER 3% SCROLL (Follows truck physics) --- */}
+      <div 
+        className={`fixed z-20 pointer-events-none
+        ${scrollPast3 && activePhase === 0 && telematicsCardPosition.visible ? 'opacity-100' : 'opacity-0'}`}
+        style={{
+          left: `${telematicsCardPosition.x}px`,
+          top: `${telematicsCardPosition.y}px`,
+          transform: `translate(-50%, -50%) scale(${telematicsCardPosition.scale}) perspective(1000px) rotateY(${telematicsCardPosition.rotateY}deg) rotateX(${telematicsCardPosition.rotateX}deg)`,
+          transformStyle: 'preserve-3d',
+          transition: 'opacity 300ms ease-out'
+        }}
+      >
+         <div className="bg-white/70 backdrop-blur-md border-t-2 border-red-600 p-6 w-[380px] relative shadow-2xl shadow-red-900/20">
+            <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-red-500"></div>
+            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-red-500"></div>
+            
+            <div className="flex items-center gap-3 mb-4">
+                <Activity className="text-red-500 animate-pulse" />
+                <span className="text-red-500 text-xs tracking-[0.3em] font-mono">SYSTEM STATUS</span>
+            </div>
+
+            <h3 className="text-2xl font-black text-gray-900 mb-3 tracking-tight">ADVANCED TELEMATICS</h3>
+            <p className="text-gray-700 text-sm leading-relaxed mb-4 font-mono">
+                Real-time data transmission with multi-protocol support. Cloud-ready architecture for seamless fleet management integration.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 border-t border-gray-300 pt-4">
+                <div>
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Connectivity</div>
+                    <div className="text-gray-900 font-bold text-sm">CAN / RS232</div>
+                </div>
+                <div>
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Update Rate</div>
+                    <div className="text-gray-900 font-bold text-sm">1Hz - 10Hz</div>
+                </div>
+                <div>
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Protocol</div>
+                    <div className="text-gray-900 font-bold text-sm">Modbus RTU</div>
+                </div>
+                <div>
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Cloud Ready</div>
+                    <div className="text-gray-900 font-bold text-sm">API / MQTT</div>
+                </div>
+            </div>
+         </div>
       </div>
 
       {/* --- PHASE 1: SENSOR HEAD FOCUS --- */}
