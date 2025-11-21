@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Activity, Wifi, Shield, Volume2, VolumeX, Radio, Cpu, BarChart3, Layers } from 'lucide-react';
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 
 // --- AUDIO SYSTEM (ENHANCED) ---
 
@@ -795,8 +799,8 @@ export default function App() {
 
     // --- SCENE SETUP ---
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x050101);
-    const fog = new THREE.FogExp2(0x050101, 0.025); // Start with heavier fog
+    scene.background = new THREE.Color(0x0a0202); // Slightly lighter background
+    const fog = new THREE.FogExp2(0x0a0202, 0.018); // Reduced fog density for better visibility
     scene.fog = fog;
 
     const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
@@ -809,16 +813,49 @@ export default function App() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMapping = THREE.ReinhardToneMapping; // Better for bloom
+    renderer.toneMappingExposure = 1.0;
     mountRef.current.appendChild(renderer.domElement);
 
-    // --- LIGHTING ---
-    const ambientLight = new THREE.AmbientLight(0xff4444, 0.3);
+    // --- BLOOM POST-PROCESSING FOR GLOWING LIGHTS ---
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.6,  // strength
+      0.3,  // radius
+      0.92  // threshold (higher = less bloom)
+    );
+    composer.addPass(bloomPass);
+
+    // --- IMPROVED LIGHTING ---
+    // Brighter ambient light for overall scene illumination
+    const ambientLight = new THREE.AmbientLight(0xff6666, 0.6);
     scene.add(ambientLight);
 
-    const hemiLight = new THREE.HemisphereLight(0xff9999, 0x220000, 0.2);
+    // Stronger hemisphere light for better depth
+    const hemiLight = new THREE.HemisphereLight(0xffaaaa, 0x440000, 0.5);
     scene.add(hemiLight);
+
+    // Add directional lights for better definition
+    const dirLight1 = new THREE.DirectionalLight(0xff8888, 0.8);
+    dirLight1.position.set(10, 15, 10);
+    scene.add(dirLight1);
+
+    const dirLight2 = new THREE.DirectionalLight(0xff6666, 0.5);
+    dirLight2.position.set(-10, 10, -10);
+    scene.add(dirLight2);
+
+    // Add point lights near the truck for local illumination
+    const pointLight1 = new THREE.PointLight(0xff4444, 1.5, 50);
+    pointLight1.position.set(0, 8, 0);
+    scene.add(pointLight1);
+
+    const pointLight2 = new THREE.PointLight(0xff6666, 1.0, 40);
+    pointLight2.position.set(0, 5, -15);
+    scene.add(pointLight2);
 
     // --- MATERIALS ---
     const neonRed = 0xff3300;
@@ -831,6 +868,8 @@ export default function App() {
       opacity: 0.95,
       blending: THREE.AdditiveBlending
     });
+
+
 
     const cabinTex = createCabinTexture();
     const bodyMat = new THREE.MeshBasicMaterial({
@@ -848,13 +887,13 @@ export default function App() {
     gridTex.wrapT = THREE.RepeatWrapping;
     gridTex.repeat.set(4, 1);
     
+    // Flat dark-red trailer body material with 30% transparency (no wireframes/grid)
     const trailerGridMat = new THREE.MeshBasicMaterial({
-        map: gridTex,
-        color: 0xff4444,
+        color: 0x330000, // Dark red
         transparent: true,
-        opacity: 0.8,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide
+        opacity: 0.3,
+        side: THREE.DoubleSide,
+        depthWrite: true
     });
 
     const markerMat = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Bright yellow
@@ -894,6 +933,8 @@ export default function App() {
         group.add(body, edges);
         return group;
     };
+
+
 
     const createMarkerLight = (x: number, y: number, z: number) => {
         const light = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.05), markerMat);
@@ -1081,12 +1122,26 @@ export default function App() {
     chassisGroup.add(railL, railR);
     
     const wheels: THREE.Group[] = [];
-    const wheelPositions = [[-2.5, 0, -9], [2.5, 0, -9], [-2.5, 0, -1.5], [2.5, 0, -1.5], [-2.5, 0, 8], [2.5, 0, 8], [-2.5, 0, 11], [2.5, 0, 11], [-2.5, 0, 14], [2.5, 0, 14]];
-    wheelPositions.forEach(pos => {
-        const w = createWheel();
-        w.position.set(pos[0], pos[1] - 1.4, pos[2]);
-        wheels.push(w);
-        truck.add(w);
+    // 5 axles total: 2 for cab (front), 3 for trailer (rear)
+    const axlePositions = [-9, -1.5, 8, 11, 14]; // Z positions for each axle
+    
+    axlePositions.forEach(zPos => {
+        // Create axle bar connecting left and right wheels
+        const axleBar = createWireMesh(new THREE.BoxGeometry(5.0, 0.3, 0.3));
+        axleBar.position.set(0, -0.8, zPos);
+        truck.add(axleBar);
+        
+        // Add left wheel
+        const wL = createWheel();
+        wL.position.set(-2.5, -0.8, zPos);
+        wheels.push(wL);
+        truck.add(wL);
+        
+        // Add right wheel
+        const wR = createWheel();
+        wR.position.set(2.5, -0.8, zPos);
+        wheels.push(wR);
+        truck.add(wR);
     });
 
     const cabGroup = new THREE.Group();
@@ -1101,7 +1156,17 @@ export default function App() {
     const cheekL = createWireMesh(new THREE.BoxGeometry(0.4, 2.5, 0.2)); cheekL.position.set(-2.3, 2.5, 0); facadeGroup.add(cheekL);
     const cheekR = createWireMesh(new THREE.BoxGeometry(0.4, 2.5, 0.2)); cheekR.position.set(2.3, 2.5, 0); facadeGroup.add(cheekR);
     const bumper = createWireMesh(new THREE.BoxGeometry(5.2, 1.2, 1.2)); bumper.position.set(0, -0.4, -4.1); cabGroup.add(bumper);
-    const hlL = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.1), markerMat); hlL.position.set(-1.8, -0.4, -4.72); cabGroup.add(hlL);
+    
+    // Bright yellow headlights with emissive glow
+    const headlightMat = new THREE.MeshStandardMaterial({ 
+      color: 0xffff00,
+      emissive: 0xffff00,
+      emissiveIntensity: 5,
+      toneMapped: false,
+      metalness: 0,
+      roughness: 1
+    });
+    const hlL = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.1), headlightMat); hlL.position.set(-1.8, -0.4, -4.72); cabGroup.add(hlL);
     const hlR = hlL.clone(); hlR.position.set(1.8, -0.4, -4.72); cabGroup.add(hlR);
     const windshield = createWireMesh(new THREE.BoxGeometry(4.8, 1.8, 0.1)); windshield.position.set(0, 4.6, -4.26); windshield.rotation.x = -0.15; cabGroup.add(windshield);
     const visor = createWireMesh(new THREE.BoxGeometry(5.0, 0.4, 0.6)); visor.position.set(0, 5.6, -4.5); visor.rotation.x = 0.2; cabGroup.add(visor);
@@ -1114,9 +1179,85 @@ export default function App() {
     const mbR = createWireMesh(new THREE.BoxGeometry(0.2, 1.4, 0.6)); mbR.position.set(3.1, 4.2, -3.9); mbR.rotation.y = -0.2; cabGroup.add(mbR);
 
     const trailer = new THREE.Group(); trailer.position.set(0, 0, 7); truck.add(trailer);
-    const trailerBody = createWireMesh(new THREE.BoxGeometry(5.2, 7.8, 26), trailerGridMat); trailerBody.position.set(0, 4.8, 0); trailer.add(trailerBody);
-    const skirtL = createWireMesh(new THREE.BoxGeometry(0.2, 1, 16)); skirtL.position.set(-2.6, 0.5, -2); trailer.add(skirtL);
-    const skirtR = createWireMesh(new THREE.BoxGeometry(0.2, 1, 16)); skirtR.position.set(2.6, 0.5, -2); trailer.add(skirtR);
+    
+    // Create trailer body with Boolean operations to cut out wheel shapes
+    const evaluator = new Evaluator();
+    const containerHeight = 9.5;
+    const containerYPosition = 2.5; // Lowered from 4.0 to 2.5
+    
+    const containerBrush = new Brush(new THREE.BoxGeometry(5.2, containerHeight, 26));
+    containerBrush.position.set(0, containerYPosition, 0);
+    containerBrush.updateMatrixWorld();
+    
+    // Create wheel cutout cylinders for the 3 trailer axles
+    const wheelCutoutRadius = 1.7; // Slightly larger than wheel radius for clearance
+    const wheelCutoutDepth = 6.0; // Wide enough to cut through container sides
+    const trailerAxleZPositions = [8, 11, 14]; // Z positions of trailer wheels (relative to truck)
+    const wheelYPosition = -0.8; // Wheel height
+    
+    let resultBrush = containerBrush;
+    
+    trailerAxleZPositions.forEach(zPos => {
+        // Left wheel cutout
+        const leftCutout = new Brush(new THREE.CylinderGeometry(wheelCutoutRadius, wheelCutoutRadius, wheelCutoutDepth, 32));
+        leftCutout.rotation.z = Math.PI / 2;
+        leftCutout.position.set(-2.5, wheelYPosition - containerYPosition, zPos - 7); // Adjust for trailer position offset
+        leftCutout.updateMatrixWorld();
+        resultBrush = evaluator.evaluate(resultBrush, leftCutout, SUBTRACTION);
+        
+        // Right wheel cutout
+        const rightCutout = new Brush(new THREE.CylinderGeometry(wheelCutoutRadius, wheelCutoutRadius, wheelCutoutDepth, 32));
+        rightCutout.rotation.z = Math.PI / 2;
+        rightCutout.position.set(2.5, wheelYPosition - containerYPosition, zPos - 7); // Adjust for trailer position offset
+        rightCutout.updateMatrixWorld();
+        resultBrush = evaluator.evaluate(resultBrush, rightCutout, SUBTRACTION);
+    });
+    
+    // Create the final mesh with cutouts
+    const trailerBody = new THREE.Mesh(resultBrush.geometry, trailerGridMat);
+    trailerBody.position.set(0, containerYPosition, 0);
+    trailer.add(trailerBody);
+    
+    // Add EXTREMELY BOLD wireframe borders (like backup file)
+    // Use simple BoxGeometry for clean edges (not CSG geometry which has too many vertices)
+    const trailerWireMat = new THREE.LineBasicMaterial({
+      color: 0xff3300,
+      linewidth: 5,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending
+    });
+    
+    const frameHeight = containerHeight - 1.0; // Reduce frame height by 1.0 units from top
+    const simpleBoxGeo = new THREE.BoxGeometry(5.2, frameHeight, 26);
+    const frameYPosition = containerYPosition + 2.5; // Adjusted position for shorter frame
+    
+    // Layer 1: Base edges with low threshold
+    const edges1 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 5), trailerWireMat);
+    edges1.position.set(0, frameYPosition, 0);
+    trailer.add(edges1);
+    
+    // Layer 2: Horizontal offset for thickness
+    const edges2 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 8), trailerWireMat);
+    edges2.position.set(0.01, frameYPosition, 0);
+    trailer.add(edges2);
+    
+    // Layer 3: Another horizontal offset
+    const edges3 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 10), trailerWireMat);
+    edges3.position.set(-0.01, frameYPosition, 0);
+    trailer.add(edges3);
+    
+    // Layer 4: Vertical offset
+    const edges4 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 12), trailerWireMat);
+    edges4.position.set(0, frameYPosition + 0.01, 0);
+    trailer.add(edges4);
+    
+    // Layer 5: Another vertical offset
+    const edges5 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 15), trailerWireMat);
+    edges5.position.set(0, frameYPosition - 0.01, 0);
+    trailer.add(edges5);
+    
+
     for(let i=0; i<8; i++) {
         const z = -12 + i * 3.4;
         trailer.add(createMarkerLight(-2.65, 8.5, z)); trailer.add(createMarkerLight(2.65, 8.5, z));
@@ -1264,9 +1405,11 @@ export default function App() {
     const liquid = new THREE.Mesh(liquidGeo, new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true, transparent: true, opacity: 0.25 }));
     tankGroup.add(liquid);
 
-    const underLight = new THREE.PointLight(0xff0000, 2, 25); underLight.position.set(0, 1, -2); truck.add(underLight);
-    const hlSpotL = new THREE.SpotLight(0xffff00, 150, 60, 0.6, 0.4); hlSpotL.position.set(-2, 1.5, -12); hlSpotL.target.position.set(-2, 0, -30); truck.add(hlSpotL); truck.add(hlSpotL.target);
-    const hlSpotR = hlSpotL.clone(); hlSpotR.position.set(2, 1.5, -12); hlSpotR.target.position.set(2, 0, -30); truck.add(hlSpotR); truck.add(hlSpotR.target);
+    const underLight = new THREE.PointLight(0xff0000, 1, 25); underLight.position.set(0, 1, -2); truck.add(underLight);
+    
+    // Yellow headlight spotlights (reduced intensity for better balance)
+    const hlSpotL = new THREE.SpotLight(0xffff00, 30, 60, 0.6, 0.4); hlSpotL.position.set(-1.8, 1.5, -12); hlSpotL.target.position.set(-1.8, 0, -30); truck.add(hlSpotL); truck.add(hlSpotL.target);
+    const hlSpotR = hlSpotL.clone(); hlSpotR.position.set(1.8, 1.5, -12); hlSpotR.target.position.set(1.8, 0, -30); truck.add(hlSpotR); truck.add(hlSpotR.target);
 
     // --- ANIMATION LOOP ---
     const clock = new THREE.Clock();
@@ -1340,7 +1483,7 @@ export default function App() {
             hemiLight.intensity = easeT * 0.2;
             
             // Reduce fog density as scene reveals
-            fog.density = 0.025 - (easeT * 0.01); // 0.025 -> 0.015
+            fog.density = 0.018 - (easeT * 0.008); // 0.018 -> 0.010
         }
         
         // --- EXTENDED INTRO ANIMATION (Triggered at 100% scroll) ---
@@ -1501,6 +1644,9 @@ export default function App() {
         camera.position.lerp(currentPos, 0.08); // Slightly slower for cinematic feel
         camera.lookAt(currentLook);
 
+        // Update bloom pass on window resize
+        bloomPass.resolution.set(window.innerWidth, window.innerHeight);
+
         // --- UPDATE 3D CARD POSITION WITH TRUCK PHYSICS ---
         if (currentPhase === 1) {
             // Position card to the left of the fuel tank (not covering it)
@@ -1562,7 +1708,7 @@ export default function App() {
             if(filterPathRef.current && filterDotRef.current) updatePath(cageGroup, filterPathRef.current, filterDotRef.current, 0.75);
         }
         
-        renderer.render(scene, camera);
+        composer.render();
         animationFrameId = requestAnimationFrame(animate);
     };
 
@@ -1610,6 +1756,8 @@ export default function App() {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+        bloomPass.resolution.set(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', handleResize);
 
