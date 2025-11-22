@@ -568,154 +568,193 @@ const createSignTexture = (text: string) => {
     return tex;
 };
 
-const createTelematicsTexture = () => {
+const createTelematicsTexture = (speed: number = 85, fuelLevel: number = 0.65) => {
   const canvas = document.createElement('canvas');
-  canvas.width = 1024;
+  canvas.width = 2048;
   canvas.height = 1024;
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.Texture();
 
-  // Transparent background (no fill)
-  ctx.clearRect(0, 0, 1024, 1024);
+  // Dark background with 50% transparency
+  const gradient = ctx.createRadialGradient(1024, 512, 100, 1024, 512, 800);
+  gradient.addColorStop(0, 'rgba(20, 10, 10, 0.5)');
+  gradient.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 2048, 1024);
 
-  // Black background with 50% transparency inside main border (80, 80, 864, 864)
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-  ctx.fillRect(80, 80, 864, 864);
-
-  // Corner brackets (outer frame) - BLACK
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 4;
-  // Top-left
-  ctx.beginPath();
-  ctx.moveTo(60, 120); ctx.lineTo(60, 60); ctx.lineTo(120, 60);
-  ctx.stroke();
-  // Top-right
-  ctx.beginPath();
-  ctx.moveTo(904, 60); ctx.lineTo(964, 60); ctx.lineTo(964, 120);
-  ctx.stroke();
-  // Bottom-left
-  ctx.beginPath();
-  ctx.moveTo(60, 904); ctx.lineTo(60, 964); ctx.lineTo(120, 964);
-  ctx.stroke();
-  // Bottom-right
-  ctx.beginPath();
-  ctx.moveTo(904, 964); ctx.lineTo(964, 964); ctx.lineTo(964, 904);
-  ctx.stroke();
-
-  // Main border (inner frame line) - BLACK
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(80, 80, 864, 864);
-
-  // Header divider line
-  ctx.strokeStyle = '#ff0000';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(100, 240);
-  ctx.lineTo(924, 240);
-  ctx.stroke();
-
-  // Create texture first
   const texture = new THREE.CanvasTexture(canvas);
+
+  const centerX = 1024;
+  const centerY = 550;
+  const mainRadius = 380;
+
+  // === TOP SEGMENTED ARC (Speed indicator) - BOLDER ===
+  const segments = 12;
+  const segmentAngle = (Math.PI * 1.2) / segments;
+  const startAngle = Math.PI * 0.6;
   
-  // Load and draw logo in header - larger, centered
-  const logo = new Image();
-  logo.src = '/Logo-white.png'; // Using Logo-white.png as specified
-  logo.crossOrigin = 'anonymous'; // Enable CORS for proper image loading
-  logo.onload = () => {
-    // Draw logo exactly as it is, no effects
-    ctx.drawImage(logo, 200, 110, 600, 100); // x, y, width, height
-    texture.needsUpdate = true; // Update texture after logo loads
-  };
+  for (let i = 0; i < segments; i++) {
+    const angle = startAngle + i * segmentAngle;
+    const speedThreshold = (i + 1) / segments;
+    
+    // Color based on speed range
+    let color = '#00ffaa'; // Cyan/green
+    if (i > segments * 0.7) {
+      color = '#ffff00'; // Yellow
+    }
+    if (i > segments * 0.85) {
+      color = '#ff4444'; // Red
+    }
+    
+    // Fill if speed exceeds this segment
+    if (speed / 160 > speedThreshold - 0.08) {
+      ctx.fillStyle = color;
+    } else {
+      ctx.fillStyle = '#1a1a1a';
+    }
+    
+    // Thicker segments
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, mainRadius + 10, angle, angle + segmentAngle * 0.85);
+    ctx.arc(centerX, centerY, mainRadius - 50, angle + segmentAngle * 0.85, angle, true);
+    ctx.closePath();
+    ctx.fill();
+  }
 
-  // Status dots (top right)
-  ctx.fillStyle = '#ff0000';
-  ctx.beginPath(); ctx.arc(850, 150, 8, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(880, 150, 8, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(910, 150, 8, 0, Math.PI * 2); ctx.fill();
-
-  // Main title
-  ctx.font = 'bold 70px Arial';
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText('ADVANCED', 120, 330);
+  // === CENTER: MAIN SPEED DISPLAY - BIGGER & BOLDER ===
+  ctx.font = 'bold 280px Arial';
+  ctx.fillStyle = '#ffee88';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(speed).toString(), centerX, centerY + 70);
   
-  ctx.font = 'bold 70px Arial';
-  ctx.fillStyle = '#ff0000';
-  ctx.fillText('TELEMATICS', 120, 400);
-
-  // Description
-  ctx.font = '20px monospace';
+  ctx.font = 'bold 56px monospace';
+  ctx.fillStyle = '#ff9955';
+  ctx.fillText('KM/H', centerX, centerY + 150);
+  
+  // ECO mode indicator - bolder
+  ctx.font = 'bold 64px monospace';
+  ctx.fillStyle = '#00ffcc';
+  ctx.fillText('ECO', centerX, centerY + 230);
+  
+  // Distance indicator - larger
+  ctx.font = 'bold 40px monospace';
   ctx.fillStyle = '#888888';
-  ctx.fillText('Real-time vehicle data transmission with multi-protocol', 120, 460);
-  ctx.fillText('support. Cloud-ready architecture for seamless fleet', 120, 490);
-  ctx.fillText('management integration.', 120, 520);
+  ctx.fillText('443.0 km', centerX, centerY + 290);
+  ctx.font = 'bold 24px monospace';
+  ctx.fillText('DISTANCE', centerX, centerY + 325);
 
-  // Status boxes with dark background
-  const drawStatusBox = (x: number, y: number, label: string, value: string) => {
-    // Dark box background
-    ctx.fillStyle = '#1a0000';
-    ctx.fillRect(x, y, 220, 90);
-    
-    // Box border
-    ctx.strokeStyle = '#660000';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, 220, 90);
-    
-    // Label
-    ctx.font = '16px monospace';
-    ctx.fillStyle = '#ff0000';
-    ctx.textAlign = 'center';
-    ctx.fillText(label, x + 110, y + 30);
-    
-    // Value
-    ctx.font = 'bold 36px monospace';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(value, x + 110, y + 70);
-    ctx.textAlign = 'left';
-  };
-
-  drawStatusBox(120, 570, 'STATUS', 'ONLINE');
-  drawStatusBox(370, 570, 'SIGNAL', '98%');
-  drawStatusBox(620, 570, 'LATENCY', '12ms');
-
-  // Connector line from latency box (dashed)
-  ctx.strokeStyle = '#ff0000';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 4]);
-  ctx.beginPath();
-  ctx.moveTo(840, 615);
-  ctx.lineTo(920, 615);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Info rows with darker styling
-  const drawInfoRow = (y: number, label: string, value: string) => {
-    ctx.font = '22px monospace';
-    ctx.fillStyle = '#555555';
-    ctx.fillText(label, 120, y);
-    
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'right';
-    ctx.fillText(value, 900, y);
-    ctx.textAlign = 'left';
-  };
-
-  drawInfoRow(720, 'CONNECTIVITY', 'CAN / RS232');
-  drawInfoRow(770, 'UPDATE RATE', '1Hz - 10Hz');
-  drawInfoRow(820, 'PROTOCOL', 'Modbus RTU');
-  drawInfoRow(870, 'CLOUD READY', 'API / MQTT');
-
-  // Footer
-  ctx.font = '18px monospace';
-  ctx.fillStyle = '#ff0000';
-  ctx.fillText('TRANSLINK SYSTEMS', 120, 930);
+  // === LEFT SIDE: FUEL GAUGE - BIGGER & BOLDER ===
+  const fuelCenterX = 300;
+  const fuelCenterY = 550;
+  const fuelRadius = 240;
   
-  // Footer indicator bars (signal strength style)
-  ctx.fillStyle = '#ff0000';
-  ctx.fillRect(850, 910, 12, 25);
-  ctx.fillRect(870, 900, 12, 35);
-  ctx.fillRect(890, 890, 12, 45);
-  ctx.fillRect(910, 880, 12, 55);
+  // Fuel arc background - thicker
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 50;
+  ctx.beginPath();
+  ctx.arc(fuelCenterX, fuelCenterY, fuelRadius, Math.PI * 0.6, Math.PI * 1.4);
+  ctx.stroke();
+  
+  // Fuel level arc (colored) - thicker
+  const fuelAngle = Math.PI * 0.6 + (fuelLevel * Math.PI * 0.8);
+  let fuelColor = '#ff4444'; // Red at bottom
+  if (fuelLevel > 0.3) fuelColor = '#ffbb00'; // Orange
+  if (fuelLevel > 0.6) fuelColor = '#00ff99'; // Green
+  
+  ctx.strokeStyle = fuelColor;
+  ctx.lineWidth = 50;
+  ctx.beginPath();
+  ctx.arc(fuelCenterX, fuelCenterY, fuelRadius, Math.PI * 0.6, fuelAngle);
+  ctx.stroke();
+  
+  // Custom fuel droplet icon (better than emoji)
+  ctx.fillStyle = fuelColor;
+  ctx.beginPath();
+  ctx.moveTo(fuelCenterX, fuelCenterY - 30);
+  ctx.bezierCurveTo(fuelCenterX - 30, fuelCenterY - 10, fuelCenterX - 30, fuelCenterY + 20, fuelCenterX, fuelCenterY + 40);
+  ctx.bezierCurveTo(fuelCenterX + 30, fuelCenterY + 20, fuelCenterX + 30, fuelCenterY - 10, fuelCenterX, fuelCenterY - 30);
+  ctx.fill();
+  
+  // Fuel percentage
+  ctx.font = 'bold 48px monospace';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(fuelLevel * 100) + '%', fuelCenterX, fuelCenterY + 120);
+  
+  // EMPTY label
+  ctx.font = 'bold 28px monospace';
+  ctx.fillStyle = '#777777';
+  ctx.fillText('EMPTY', fuelCenterX - 120, fuelCenterY + 200);
+
+  // === RIGHT SIDE: BATTERY/CHARGE GAUGE - BIGGER & BOLDER ===
+  const battCenterX = 1748;
+  const battCenterY = 550;
+  const battRadius = 240;
+  
+  // Battery arc background - thicker
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 50;
+  ctx.beginPath();
+  ctx.arc(battCenterX, battCenterY, battRadius, Math.PI * 1.6, Math.PI * 2.4);
+  ctx.stroke();
+  
+  // Battery level arc - thicker
+  const battLevel = 0.75;
+  const battAngle = Math.PI * 1.6 + (battLevel * Math.PI * 0.8);
+  ctx.strokeStyle = '#ffee00';
+  ctx.lineWidth = 50;
+  ctx.beginPath();
+  ctx.arc(battCenterX, battCenterY, battRadius, Math.PI * 1.6, battAngle);
+  ctx.stroke();
+  
+  // Custom battery icon (better design)
+  ctx.fillStyle = '#ffee00';
+  ctx.fillRect(battCenterX - 35, battCenterY - 20, 70, 40);
+  ctx.fillRect(battCenterX + 35, battCenterY - 10, 10, 20);
+  
+  // Battery fill level indicator
+  const battFillWidth = 60 * battLevel;
+  ctx.fillStyle = '#ffee00';
+  ctx.fillRect(battCenterX - 30, battCenterY - 15, battFillWidth, 30);
+  
+  // Lightning bolt inside battery
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.moveTo(battCenterX + 5, battCenterY - 15);
+  ctx.lineTo(battCenterX - 5, battCenterY);
+  ctx.lineTo(battCenterX, battCenterY);
+  ctx.lineTo(battCenterX - 10, battCenterY + 15);
+  ctx.lineTo(battCenterX, battCenterY);
+  ctx.lineTo(battCenterX - 5, battCenterY);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Range display - bigger
+  ctx.font = 'bold 48px monospace';
+  ctx.fillStyle = '#00ffcc';
+  ctx.textAlign = 'center';
+  ctx.fillText('75 KM', battCenterX, battCenterY + 100);
+  
+  ctx.font = 'bold 24px monospace';
+  ctx.fillStyle = '#888888';
+  ctx.fillText('RANGE', battCenterX, battCenterY + 135);
+
+  // === TOP INFO BAR - BIGGER ===
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 42px monospace';
+  ctx.fillStyle = '#00ffcc';
+  ctx.fillText('⚙ ECO', 120, 130);
+  
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 36px monospace';
+  ctx.fillStyle = '#999999';
+  ctx.fillText('18°C', centerX + 250, 130);
+  ctx.fillText('12:45 pm', centerX + 450, 130);
+  
+  ctx.textAlign = 'right';
+  ctx.font = 'bold 38px monospace';
+  ctx.fillStyle = '#777777';
+  ctx.fillText('TRANSLINK', 1920, 130);
 
   return texture;
 };
@@ -1318,7 +1357,10 @@ export default function App() {
     const tailLights = [tailLightLeftTop, tailLightLeftBottom, tailLightRightTop, tailLightRightBottom];
     const tailLightGlows = [tailLightGlow1, tailLightGlow2, tailLightGlow3, tailLightGlow4];
 
-    // --- TELEMATICS DISPLAY ON TRAILER ---
+    // --- STANDALONE 3D TELEMATICS DISPLAY ---
+    // Create a modern floating holographic display with no background elements
+    const telematicsGroup = new THREE.Group();
+    
     const telematicsTex = createTelematicsTexture();
     const telematicsMat = new THREE.MeshBasicMaterial({ 
       map: telematicsTex,
@@ -1327,14 +1369,79 @@ export default function App() {
       side: THREE.DoubleSide
     });
 
-    // Left Side Display - Centered on body
-    const telematicsPlaneL = new THREE.Mesh(
-      new THREE.PlaneGeometry(8, 8), // Square display
+    // Main display screen - horizontal landscape format (width reduced by 10%)
+    const displayScreen = new THREE.Mesh(
+      new THREE.PlaneGeometry(9, 5),
       telematicsMat
     );
-    telematicsPlaneL.position.set(-3.255, 4.8, 0); // X: adjusted for wider body (6.5/2 + 0.005), Y: center height, Z: center of trailer
-    telematicsPlaneL.rotation.y = -Math.PI / 2; // Face outward (left)
-    trailer.add(telematicsPlaneL);
+    telematicsGroup.add(displayScreen);
+
+    // Holographic frame edges (thin glowing lines)
+    const frameMat = new THREE.MeshBasicMaterial({ 
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0.8
+    });
+    
+    // Frame corners (small accent pieces)
+    const cornerSize = 0.54;
+    const frameThickness = 0.045;
+    const frameOffsetX = 4.68; // 10% reduction
+    const frameOffsetY = 2.6; // 50% of original for landscape format
+    
+    // Top-left corner
+    const cornerTL1 = new THREE.Mesh(new THREE.BoxGeometry(cornerSize, frameThickness, frameThickness), frameMat);
+    cornerTL1.position.set(-frameOffsetX, frameOffsetY, 0.1);
+    telematicsGroup.add(cornerTL1);
+    const cornerTL2 = new THREE.Mesh(new THREE.BoxGeometry(frameThickness, cornerSize, frameThickness), frameMat);
+    cornerTL2.position.set(-frameOffsetX, frameOffsetY, 0.1);
+    telematicsGroup.add(cornerTL2);
+    
+    // Top-right corner
+    const cornerTR1 = new THREE.Mesh(new THREE.BoxGeometry(cornerSize, frameThickness, frameThickness), frameMat);
+    cornerTR1.position.set(frameOffsetX, frameOffsetY, 0.1);
+    telematicsGroup.add(cornerTR1);
+    const cornerTR2 = new THREE.Mesh(new THREE.BoxGeometry(frameThickness, cornerSize, frameThickness), frameMat);
+    cornerTR2.position.set(frameOffsetX, frameOffsetY, 0.1);
+    telematicsGroup.add(cornerTR2);
+    
+    // Bottom-left corner
+    const cornerBL1 = new THREE.Mesh(new THREE.BoxGeometry(cornerSize, frameThickness, frameThickness), frameMat);
+    cornerBL1.position.set(-frameOffsetX, -frameOffsetY, 0.1);
+    telematicsGroup.add(cornerBL1);
+    const cornerBL2 = new THREE.Mesh(new THREE.BoxGeometry(frameThickness, cornerSize, frameThickness), frameMat);
+    cornerBL2.position.set(-frameOffsetX, -frameOffsetY, 0.1);
+    telematicsGroup.add(cornerBL2);
+    
+    // Bottom-right corner
+    const cornerBR1 = new THREE.Mesh(new THREE.BoxGeometry(cornerSize, frameThickness, frameThickness), frameMat);
+    cornerBR1.position.set(frameOffsetX, -frameOffsetY, 0.1);
+    telematicsGroup.add(cornerBR1);
+    const cornerBR2 = new THREE.Mesh(new THREE.BoxGeometry(frameThickness, cornerSize, frameThickness), frameMat);
+    cornerBR2.position.set(frameOffsetX, -frameOffsetY, 0.1);
+    telematicsGroup.add(cornerBR2);
+
+    // Glowing point lights at corners for holographic effect
+    const cornerLight1 = new THREE.PointLight(0xff0000, 1.5, 5);
+    cornerLight1.position.set(-frameOffsetX, frameOffsetY, 0.5);
+    telematicsGroup.add(cornerLight1);
+    
+    const cornerLight2 = new THREE.PointLight(0xff0000, 1.5, 5);
+    cornerLight2.position.set(frameOffsetX, frameOffsetY, 0.5);
+    telematicsGroup.add(cornerLight2);
+    
+    const cornerLight3 = new THREE.PointLight(0xff0000, 1.5, 5);
+    cornerLight3.position.set(-frameOffsetX, -frameOffsetY, 0.5);
+    telematicsGroup.add(cornerLight3);
+    
+    const cornerLight4 = new THREE.PointLight(0xff0000, 1.5, 5);
+    cornerLight4.position.set(frameOffsetX, -frameOffsetY, 0.5);
+    telematicsGroup.add(cornerLight4);
+
+    // Position the entire display floating to the left of the trailer
+    telematicsGroup.position.set(-10, 4.5, 0);
+    telematicsGroup.rotation.y = 0; // Face forward for proper text orientation
+    trailer.add(telematicsGroup);
 
     // -- FUEL TANK & SENSOR --
     const tankGroup = new THREE.Group();
@@ -1626,6 +1733,24 @@ export default function App() {
         particles.geometry.attributes.position.needsUpdate = true;
 
         wheels.forEach(w => { w.rotation.x += delta * (TRUCK_SPEED / WHEEL_RADIUS); });
+
+        // === UPDATE TELEMATICS DISPLAY ===
+        // Update every 0.5 seconds for performance
+        if (Math.floor(time * 2) !== Math.floor((time - delta) * 2)) {
+            // Calculate speed (varies slightly for realism)
+            const baseSpeed = TRUCK_SPEED * 0.6; // Convert to KPH (roughly)
+            const speedVariation = Math.sin(time * 0.5) * 10; // ±10 KPH variation
+            const currentSpeed = baseSpeed + speedVariation;
+            
+            // Calculate fuel level (decreases slowly over time)
+            const fuelConsumption = time * 0.002; // Slow consumption
+            const currentFuel = Math.max(0.15, 0.65 - fuelConsumption); // Start at 65%, min 15%
+            
+            // Update texture
+            const newTex = createTelematicsTexture(currentSpeed, currentFuel);
+            telematicsMat.map = newTex;
+            telematicsMat.needsUpdate = true;
+        }
 
         truck.position.y = Math.sin(time * 15) * 0.015 + Math.sin(time * 80) * 0.005;
         cabGroup.rotation.x = Math.sin(time * 10) * 0.005 + (Math.random() - 0.5) * 0.002;
@@ -2034,7 +2159,7 @@ export default function App() {
       
       {/* --- TOP BAR --- */}
       <div className="fixed top-0 left-0 w-full z-20 p-6 flex justify-between items-start pointer-events-none">
-        <div className="border-l-4 border-red-600 pl-6 bg-gradient-to-r from-black/90 to-transparent pr-20 py-3 clip-path-slant">
+        <div className="border-l-4 border-red-600 pl-6 pr-20 py-3 clip-path-slant">
             <div className="flex items-center gap-3">
                 <img 
                   src="/Logo-white.png" 
@@ -2074,7 +2199,7 @@ export default function App() {
          </h2>
          <div className="text-red-500 text-lg font-bold tracking-[0.5em] mb-6 pl-2 animate-[fadeInUp_1.4s_ease-out]">FUEL MONITORING</div>
          <div className="w-32 h-2 bg-red-600 mb-6 animate-[expandWidth_1.6s_ease-out]"></div>
-         <p className="max-w-md text-gray-300 bg-black/80 backdrop-blur-md p-6 border-l-2 border-red-600 text-sm leading-relaxed animate-[fadeInUp_1.8s_ease-out]">
+         <p className="max-w-md text-gray-300 p-6 border-l-2 border-red-600 text-sm leading-relaxed animate-[fadeInUp_1.8s_ease-out]">
             High-precision fuel level monitoring with ±1% static accuracy. Translink Fuel provides real-time tracking, theft detection, and seamless fleet integration for comprehensive fuel management.
          </p>
       </div>
@@ -2091,7 +2216,7 @@ export default function App() {
           transition: 'opacity 300ms ease-out'
         }}
       >
-         <div className="bg-black/90 backdrop-blur-md border-t-2 border-red-600 p-8 w-[450px] relative shadow-2xl shadow-red-900/20">
+         <div className="border-t-2 border-red-600 p-8 w-[450px] relative">
             <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-red-500"></div>
             <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-red-500"></div>
             
@@ -2161,41 +2286,41 @@ export default function App() {
           {/* These are positioned absolutely at the target coordinates of the SVG paths (Window Width * 0.65) */}
           
           {/* 1. Head Card (Top) */}
-          <div className="absolute left-[66%] top-[20%] w-80 -translate-y-1/2 bg-black/80 backdrop-blur-sm border-l-2 border-red-500 p-4 transform transition-all hover:bg-red-900/10">
+          <div className="absolute left-[66%] top-[20%] w-80 -translate-y-1/2 border-l-2 border-red-500 p-4 transform transition-all">
               <div className="flex items-start justify-between mb-2">
                   <h3 className="font-bold text-lg text-white tracking-tight">SENSOR HEAD</h3>
                   <Cpu size={16} className="text-red-500"/>
               </div>
               <p className="text-xs text-gray-400 mb-3 leading-relaxed">Advanced MCU with remote calibration, self-diagnostics, and real-time data feed. Supports CAN, RS232, and Modbus interfaces.</p>
               <div className="flex gap-2">
-                  <span className="bg-red-900/30 border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">REMOTE CAL</span>
-                  <span className="bg-red-900/30 border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">MULTI-IF</span>
+                  <span className="border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">REMOTE CAL</span>
+                  <span className="border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">MULTI-IF</span>
               </div>
           </div>
 
           {/* 2. Probe Card (Middle) */}
-          <div className="absolute left-[66%] top-[50%] w-80 -translate-y-1/2 bg-black/80 backdrop-blur-sm border-l-2 border-red-500 p-4 transform transition-all hover:bg-red-900/10">
+          <div className="absolute left-[66%] top-[50%] w-80 -translate-y-1/2 border-l-2 border-red-500 p-4 transform transition-all">
               <div className="flex items-start justify-between mb-2">
                   <h3 className="font-bold text-lg text-white tracking-tight">FUEL PROBE</h3>
                   <BarChart3 size={16} className="text-red-500"/>
               </div>
               <p className="text-xs text-gray-400 mb-3 leading-relaxed">High-precision capacitive probe with &lt;0.5mm resolution. Features inclinometer for tilt compensation and anti-slosh technology for stable readings.</p>
               <div className="flex gap-2">
-                  <span className="bg-red-900/30 border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">±1% ACCURACY</span>
-                  <span className="bg-red-900/30 border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">ANTI-SLOSH</span>
+                  <span className="border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">±1% ACCURACY</span>
+                  <span className="border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">ANTI-SLOSH</span>
               </div>
           </div>
 
            {/* 3. Filter Card (Bottom) */}
-           <div className="absolute left-[66%] top-[75%] w-80 -translate-y-1/2 bg-black/80 backdrop-blur-sm border-l-2 border-red-500 p-4 transform transition-all hover:bg-red-900/10">
+           <div className="absolute left-[66%] top-[75%] w-80 -translate-y-1/2 border-l-2 border-red-500 p-4 transform transition-all">
               <div className="flex items-start justify-between mb-2">
                   <h3 className="font-bold text-lg text-white tracking-tight">PROTECTION CAGE</h3>
                   <Layers size={16} className="text-red-500"/>
               </div>
               <p className="text-xs text-gray-400 mb-3 leading-relaxed">Corrosion-resistant protective cage with chemical-resistant materials. Shock-resistant design ensures durability in harsh environments.</p>
               <div className="flex gap-2">
-                  <span className="bg-red-900/30 border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">IP67</span>
-                  <span className="bg-red-900/30 border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">SHOCK-PROOF</span>
+                  <span className="border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">IP67</span>
+                  <span className="border border-red-900/50 text-[10px] px-2 py-1 text-red-300 rounded-sm">SHOCK-PROOF</span>
               </div>
           </div>
       </div>
