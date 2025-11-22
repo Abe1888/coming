@@ -787,6 +787,8 @@ export default function App() {
   const extendedIntroStartTimeRef = useRef<number | null>(null);
   const extendedIntroFinishedRef = useRef(false);
   
+
+  
   // 3D card positioning state (includes scale and rotation for perspective)
   const [cardPosition, setCardPosition] = useState({ 
     x: 0, 
@@ -834,6 +836,7 @@ export default function App() {
       }
   }, [activePhase, isMuted]);
 
+
   useEffect(() => {
     if (!mountRef.current) return;
 
@@ -843,7 +846,41 @@ export default function App() {
     const fog = new THREE.FogExp2(0x0a0202, 0.018); // Reduced fog density for better visibility
     scene.fog = fog;
 
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
+    // Load camera settings from localStorage (set by camera controller page)
+    let initialSettings = { posX: 0, posY: 8, posZ: 25, rotX: 0, rotY: 0, rotZ: 0, fov: 55 };
+    const savedSettings = localStorage.getItem('cameraSettings');
+    if (savedSettings) {
+      try {
+        initialSettings = JSON.parse(savedSettings);
+      } catch (e) {
+        console.error('Failed to parse camera settings');
+      }
+    }
+    
+    const camera = new THREE.PerspectiveCamera(initialSettings.fov, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(initialSettings.posX, initialSettings.posY, initialSettings.posZ);
+    camera.rotation.set(initialSettings.rotX, initialSettings.rotY, initialSettings.rotZ);
+    
+    // Listen for camera settings changes from controller page
+    const handleCameraUpdate = () => {
+      const updated = localStorage.getItem('cameraSettings');
+      if (updated) {
+        try {
+          const settings = JSON.parse(updated);
+          camera.position.set(settings.posX, settings.posY, settings.posZ);
+          camera.rotation.set(settings.rotX, settings.rotY, settings.rotZ);
+          camera.fov = settings.fov;
+          camera.updateProjectionMatrix();
+        } catch (e) {
+          console.error('Failed to update camera');
+        }
+      }
+    };
+    
+    // Listen for storage events (from other tabs/windows)
+    window.addEventListener('storage', handleCameraUpdate);
+    // Listen for custom events (from same page)
+    window.addEventListener('cameraSettingsChanged', handleCameraUpdate);
     const renderer = new THREE.WebGLRenderer({ 
         antialias: true, 
         powerPreference: "high-performance",
@@ -2049,6 +2086,8 @@ export default function App() {
     return () => {
         window.removeEventListener('scroll', handleScroll);
         window.removeEventListener('resize', handleResize);
+        window.removeEventListener('storage', handleCameraUpdate);
+        window.removeEventListener('cameraSettingsChanged', handleCameraUpdate);
         document.removeEventListener('click', handleViewportClick);
         cancelAnimationFrame(animationFrameId);
         if(mountRef.current && renderer.domElement) {
