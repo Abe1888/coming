@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
+import { createCargoContainer } from './components/CargoContainer';
 
 // --- AUDIO SYSTEM (ENHANCED) ---
 
@@ -897,6 +898,16 @@ export default function App() {
     });
 
     const markerMat = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Bright yellow
+    
+    // Black tire material
+    const tireMat = new THREE.MeshBasicMaterial({
+      color: 0x000000, // Black
+      transparent: true,
+      opacity: 0.9,
+      polygonOffset: true,
+      polygonOffsetFactor: 1, 
+      polygonOffsetUnits: 1
+    });
 
     const railMat = new THREE.MeshPhongMaterial({
         color: 0x220000,
@@ -945,20 +956,75 @@ export default function App() {
     const createWheel = () => {
         const group = new THREE.Group();
         
-        const tireGeo = new THREE.CylinderGeometry(1.55, 1.55, 1.1, 32);
-        tireGeo.rotateZ(Math.PI/2);
-        const tire = new THREE.Mesh(tireGeo, bodyMat);
-        const tireEdge = new THREE.LineSegments(new THREE.EdgesGeometry(tireGeo, 24), wireMat);
+        // Create realistic tire profile using LatheGeometry
+        // LatheGeometry: X = radius from center, Y = position along axis
+        const tireProfile: THREE.Vector2[] = [];
+        const outerRadius = 1.5;
+        const innerRadius = 0.85;
+        const tireWidth = 1.1; // Increased thickness for more substantial look
+        const halfWidth = tireWidth / 2;
         
+        // Build tire cross-section profile (will be rotated 360°)
+        // Start from one side and go to the other
+        
+        // Left inner rim edge
+        tireProfile.push(new THREE.Vector2(innerRadius, -halfWidth * 0.35));
+        
+        // Left sidewall curve (rim to tread)
+        const sidewallSteps = 10;
+        for (let i = 0; i <= sidewallSteps; i++) {
+            const t = i / sidewallSteps;
+            // Smooth curve from rim to outer tread
+            const radius = innerRadius + (outerRadius - innerRadius) * (t * t * (3 - 2 * t)); // smoothstep
+            // Sidewall bulge
+            const widthFactor = Math.sin(t * Math.PI) * 0.15;
+            const yPos = -halfWidth * (0.35 + widthFactor);
+            tireProfile.push(new THREE.Vector2(radius, yPos));
+        }
+        
+        // Tread surface (slightly rounded, mostly flat)
+        const treadSteps = 8;
+        for (let i = 0; i <= treadSteps; i++) {
+            const t = i / treadSteps;
+            const yPos = -halfWidth + (t * tireWidth);
+            // Very slight crown on tread
+            const radius = outerRadius - 0.03 * Math.sin(t * Math.PI);
+            tireProfile.push(new THREE.Vector2(radius, yPos));
+        }
+        
+        // Right sidewall curve (tread to rim)
+        for (let i = sidewallSteps; i >= 0; i--) {
+            const t = i / sidewallSteps;
+            const radius = innerRadius + (outerRadius - innerRadius) * (t * t * (3 - 2 * t));
+            const widthFactor = Math.sin(t * Math.PI) * 0.15;
+            const yPos = halfWidth * (0.35 + widthFactor);
+            tireProfile.push(new THREE.Vector2(radius, yPos));
+        }
+        
+        // Right inner rim edge (close the profile)
+        tireProfile.push(new THREE.Vector2(innerRadius, halfWidth * 0.35));
+        
+        // Create tire using lathe geometry (rotates profile 360° around Y axis)
+        const tireGeo = new THREE.LatheGeometry(tireProfile, 48);
+        tireGeo.rotateZ(Math.PI / 2); // Rotate to face forward (wheel faces X direction)
+        const tire = new THREE.Mesh(tireGeo, tireMat);
+        
+        // Create wireframe for tire
+        const tireWireframe = new THREE.WireframeGeometry(tireGeo);
+        const tireWireframeMesh = new THREE.LineSegments(tireWireframe, wireMat);
+        
+        // Rim
         const rimGeo = new THREE.CylinderGeometry(1.0, 1.0, 1.15, 24);
         rimGeo.rotateZ(Math.PI/2);
         const rimEdge = new THREE.LineSegments(new THREE.EdgesGeometry(rimGeo), wireMat);
 
+        // Hub
         const hubGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.3, 16);
         hubGeo.rotateZ(Math.PI/2);
         const hub = new THREE.Mesh(hubGeo, bodyMat);
         const hubEdge = new THREE.LineSegments(new THREE.EdgesGeometry(hubGeo), wireMat);
 
+        // Spokes
         const spokeGeo = new THREE.BoxGeometry(0.8, 0.1, 1.2);
         const s1 = new THREE.Mesh(spokeGeo, bodyMat);
         const s2 = s1.clone(); s2.rotation.x = Math.PI/3;
@@ -968,6 +1034,7 @@ export default function App() {
         const s2e = s1e.clone(); s2e.rotation.x = Math.PI/3;
         const s3e = s1e.clone(); s3e.rotation.x = (Math.PI/3)*2;
         
+        // Lug nuts
         const lugs = new THREE.Group();
         const lugCount = 8;
         for(let i=0; i<lugCount; i++) {
@@ -984,7 +1051,7 @@ export default function App() {
             lugs.add(lug, lugIn);
         }
 
-        group.add(tire, tireEdge, rimEdge, hub, hubEdge, s1e, s2e, s3e, lugs);
+        group.add(tire, tireWireframeMesh, rimEdge, hub, hubEdge, s1e, s2e, s3e, lugs);
         return group;
     };
 
@@ -1157,17 +1224,25 @@ export default function App() {
     const cheekR = createWireMesh(new THREE.BoxGeometry(0.4, 2.5, 0.2)); cheekR.position.set(2.3, 2.5, 0); facadeGroup.add(cheekR);
     const bumper = createWireMesh(new THREE.BoxGeometry(5.2, 1.2, 1.2)); bumper.position.set(0, -0.4, -4.1); cabGroup.add(bumper);
     
-    // Bright yellow headlights with emissive glow
+    // Bright white headlights with emissive glow
     const headlightMat = new THREE.MeshStandardMaterial({ 
-      color: 0xffff00,
-      emissive: 0xffff00,
+      color: 0xffffff,
+      emissive: 0xffffff,
       emissiveIntensity: 5,
       toneMapped: false,
       metalness: 0,
       roughness: 1
     });
-    const hlL = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.1), headlightMat); hlL.position.set(-1.8, -0.4, -4.72); cabGroup.add(hlL);
-    const hlR = hlL.clone(); hlR.position.set(1.8, -0.4, -4.72); cabGroup.add(hlR);
+    const hlL = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.1), headlightMat); 
+    hlL.position.set(-1.8, -0.4, -4.72); 
+    cabGroup.add(hlL);
+    
+    const hlR = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.1), headlightMat.clone()); 
+    hlR.position.set(1.8, -0.4, -4.72); 
+    cabGroup.add(hlR);
+    
+    // Store headlights for animation
+    const headlights = [hlL, hlR];
     const windshield = createWireMesh(new THREE.BoxGeometry(4.8, 1.8, 0.1)); windshield.position.set(0, 4.6, -4.26); windshield.rotation.x = -0.15; cabGroup.add(windshield);
     const visor = createWireMesh(new THREE.BoxGeometry(5.0, 0.4, 0.6)); visor.position.set(0, 5.6, -4.5); visor.rotation.x = 0.2; cabGroup.add(visor);
     cabGroup.add(createMarkerLight(-1.8, 5.6, -4.8), createMarkerLight(1.8, 5.6, -4.8));
@@ -1180,89 +1255,68 @@ export default function App() {
 
     const trailer = new THREE.Group(); trailer.position.set(0, 0, 7); truck.add(trailer);
     
-    // Create trailer body with Boolean operations to cut out wheel shapes
-    const evaluator = new Evaluator();
-    const containerHeight = 9.5;
-    const containerYPosition = 2.5; // Lowered from 4.0 to 2.5
+    // === NEW REALISTIC CARGO CONTAINER ===
+    const cargoContainer = createCargoContainer(wireMat, trailerGridMat);
+    trailer.add(cargoContainer);
     
-    const containerBrush = new Brush(new THREE.BoxGeometry(5.2, containerHeight, 26));
-    containerBrush.position.set(0, containerYPosition, 0);
-    containerBrush.updateMatrixWorld();
-    
-    // Create wheel cutout cylinders for the 3 trailer axles
-    const wheelCutoutRadius = 1.7; // Slightly larger than wheel radius for clearance
-    const wheelCutoutDepth = 6.0; // Wide enough to cut through container sides
-    const trailerAxleZPositions = [8, 11, 14]; // Z positions of trailer wheels (relative to truck)
-    const wheelYPosition = -0.8; // Wheel height
-    
-    let resultBrush = containerBrush;
-    
-    trailerAxleZPositions.forEach(zPos => {
-        // Left wheel cutout
-        const leftCutout = new Brush(new THREE.CylinderGeometry(wheelCutoutRadius, wheelCutoutRadius, wheelCutoutDepth, 32));
-        leftCutout.rotation.z = Math.PI / 2;
-        leftCutout.position.set(-2.5, wheelYPosition - containerYPosition, zPos - 7); // Adjust for trailer position offset
-        leftCutout.updateMatrixWorld();
-        resultBrush = evaluator.evaluate(resultBrush, leftCutout, SUBTRACTION);
-        
-        // Right wheel cutout
-        const rightCutout = new Brush(new THREE.CylinderGeometry(wheelCutoutRadius, wheelCutoutRadius, wheelCutoutDepth, 32));
-        rightCutout.rotation.z = Math.PI / 2;
-        rightCutout.position.set(2.5, wheelYPosition - containerYPosition, zPos - 7); // Adjust for trailer position offset
-        rightCutout.updateMatrixWorld();
-        resultBrush = evaluator.evaluate(resultBrush, rightCutout, SUBTRACTION);
-    });
-    
-    // Create the final mesh with cutouts
-    const trailerBody = new THREE.Mesh(resultBrush.geometry, trailerGridMat);
-    trailerBody.position.set(0, containerYPosition, 0);
-    trailer.add(trailerBody);
-    
-    // Add EXTREMELY BOLD wireframe borders (like backup file)
-    // Use simple BoxGeometry for clean edges (not CSG geometry which has too many vertices)
-    const trailerWireMat = new THREE.LineBasicMaterial({
-      color: 0xff3300,
-      linewidth: 5,
-      transparent: true,
-      opacity: 1.0,
-      blending: THREE.AdditiveBlending
-    });
-    
-    const frameHeight = containerHeight - 1.0; // Reduce frame height by 1.0 units from top
-    const simpleBoxGeo = new THREE.BoxGeometry(5.2, frameHeight, 26);
-    const frameYPosition = containerYPosition + 2.5; // Adjusted position for shorter frame
-    
-    // Layer 1: Base edges with low threshold
-    const edges1 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 5), trailerWireMat);
-    edges1.position.set(0, frameYPosition, 0);
-    trailer.add(edges1);
-    
-    // Layer 2: Horizontal offset for thickness
-    const edges2 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 8), trailerWireMat);
-    edges2.position.set(0.01, frameYPosition, 0);
-    trailer.add(edges2);
-    
-    // Layer 3: Another horizontal offset
-    const edges3 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 10), trailerWireMat);
-    edges3.position.set(-0.01, frameYPosition, 0);
-    trailer.add(edges3);
-    
-    // Layer 4: Vertical offset
-    const edges4 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 12), trailerWireMat);
-    edges4.position.set(0, frameYPosition + 0.01, 0);
-    trailer.add(edges4);
-    
-    // Layer 5: Another vertical offset
-    const edges5 = new THREE.LineSegments(new THREE.EdgesGeometry(simpleBoxGeo, 15), trailerWireMat);
-    edges5.position.set(0, frameYPosition - 0.01, 0);
-    trailer.add(edges5);
-    
-
+    // Marker lights
     for(let i=0; i<8; i++) {
         const z = -12 + i * 3.4;
-        trailer.add(createMarkerLight(-2.65, 8.5, z)); trailer.add(createMarkerLight(2.65, 8.5, z));
-        trailer.add(createMarkerLight(-2.65, 1.5, z)); trailer.add(createMarkerLight(2.65, 1.5, z));
+        trailer.add(createMarkerLight(-3.3, 8.5, z)); trailer.add(createMarkerLight(3.3, 8.5, z));
+        trailer.add(createMarkerLight(-3.3, 1.5, z)); trailer.add(createMarkerLight(3.3, 1.5, z));
     }
+
+    // === RED TAIL LIGHTS (Back of container) ===
+    const tailLightMat = new THREE.MeshStandardMaterial({ 
+      color: 0xff0000,
+      emissive: 0xff0000,
+      emissiveIntensity: 3,
+      toneMapped: false,
+      metalness: 0,
+      roughness: 0.3
+    });
+    
+    // Tail light geometry (rectangular)
+    const tailLightGeo = new THREE.BoxGeometry(0.4, 0.8, 0.1);
+    
+    // Left side tail lights (2 lights stacked)
+    const tailLightLeftTop = new THREE.Mesh(tailLightGeo, tailLightMat);
+    tailLightLeftTop.position.set(-2.8, 2.5, 13.05);
+    trailer.add(tailLightLeftTop);
+    
+    const tailLightLeftBottom = new THREE.Mesh(tailLightGeo, tailLightMat);
+    tailLightLeftBottom.position.set(-2.8, 1.2, 13.05);
+    trailer.add(tailLightLeftBottom);
+    
+    // Right side tail lights (2 lights stacked)
+    const tailLightRightTop = new THREE.Mesh(tailLightGeo, tailLightMat);
+    tailLightRightTop.position.set(2.8, 2.5, 13.05);
+    trailer.add(tailLightRightTop);
+    
+    const tailLightRightBottom = new THREE.Mesh(tailLightGeo, tailLightMat);
+    tailLightRightBottom.position.set(2.8, 1.2, 13.05);
+    trailer.add(tailLightRightBottom);
+    
+    // Tail light point lights for glow effect
+    const tailLightGlow1 = new THREE.PointLight(0xff0000, 2, 15);
+    tailLightGlow1.position.set(-2.8, 2.5, 13.2);
+    trailer.add(tailLightGlow1);
+    
+    const tailLightGlow2 = new THREE.PointLight(0xff0000, 2, 15);
+    tailLightGlow2.position.set(2.8, 2.5, 13.2);
+    trailer.add(tailLightGlow2);
+    
+    const tailLightGlow3 = new THREE.PointLight(0xff0000, 2, 15);
+    tailLightGlow3.position.set(-2.8, 1.2, 13.2);
+    trailer.add(tailLightGlow3);
+    
+    const tailLightGlow4 = new THREE.PointLight(0xff0000, 2, 15);
+    tailLightGlow4.position.set(2.8, 1.2, 13.2);
+    trailer.add(tailLightGlow4);
+    
+    // Store tail lights for animation
+    const tailLights = [tailLightLeftTop, tailLightLeftBottom, tailLightRightTop, tailLightRightBottom];
+    const tailLightGlows = [tailLightGlow1, tailLightGlow2, tailLightGlow3, tailLightGlow4];
 
     // --- TELEMATICS DISPLAY ON TRAILER ---
     const telematicsTex = createTelematicsTexture();
@@ -1278,7 +1332,7 @@ export default function App() {
       new THREE.PlaneGeometry(8, 8), // Square display
       telematicsMat
     );
-    telematicsPlaneL.position.set(-2.605, 4.8, 0); // X: left wall, Y: center height, Z: center of trailer
+    telematicsPlaneL.position.set(-3.255, 4.8, 0); // X: adjusted for wider body (6.5/2 + 0.005), Y: center height, Z: center of trailer
     telematicsPlaneL.rotation.y = -Math.PI / 2; // Face outward (left)
     trailer.add(telematicsPlaneL);
 
@@ -1407,16 +1461,32 @@ export default function App() {
 
     const underLight = new THREE.PointLight(0xff0000, 1, 25); underLight.position.set(0, 1, -2); truck.add(underLight);
     
-    // Yellow headlight spotlights (reduced intensity for better balance)
-    const hlSpotL = new THREE.SpotLight(0xffff00, 30, 60, 0.6, 0.4); hlSpotL.position.set(-1.8, 1.5, -12); hlSpotL.target.position.set(-1.8, 0, -30); truck.add(hlSpotL); truck.add(hlSpotL.target);
-    const hlSpotR = hlSpotL.clone(); hlSpotR.position.set(1.8, 1.5, -12); hlSpotR.target.position.set(1.8, 0, -30); truck.add(hlSpotR); truck.add(hlSpotR.target);
+    // White headlight spotlights (enhanced long-range beam)
+    const hlSpotL = new THREE.SpotLight(0xffffff, 300, 200, 0.4, 0.2); 
+    hlSpotL.position.set(-1.8, 1.5, -12); 
+    hlSpotL.target.position.set(-1.8, -2, -100); // Aim far down the road
+    hlSpotL.castShadow = false;
+    hlSpotL.decay = 1.5; // Slower light decay for longer visible distance
+    truck.add(hlSpotL); 
+    truck.add(hlSpotL.target);
+    
+    const hlSpotR = new THREE.SpotLight(0xffffff, 300, 200, 0.4, 0.2); 
+    hlSpotR.position.set(1.8, 1.5, -12); 
+    hlSpotR.target.position.set(1.8, -2, -100); // Aim far down the road
+    hlSpotR.castShadow = false;
+    hlSpotR.decay = 1.5; // Slower light decay for longer visible distance
+    truck.add(hlSpotR); 
+    truck.add(hlSpotR.target);
+    
+    // Store spotlights for animation
+    const headlightSpots = [hlSpotL, hlSpotR];
 
     // --- ANIMATION LOOP ---
     const clock = new THREE.Clock();
     let animationFrameId: number;
     let currentPhase = 0;
 
-    const TRUCK_SPEED = 80; 
+    const TRUCK_SPEED = 160; // Increased for faster wheel rotation
     const WHEEL_RADIUS = 1.55;
     const ROAD_SEGMENT_HEIGHT = 100;
 
@@ -1557,7 +1627,7 @@ export default function App() {
 
         wheels.forEach(w => { w.rotation.x += delta * (TRUCK_SPEED / WHEEL_RADIUS); });
 
-        truck.position.y = Math.sin(time * 15) * 0.015 + Math.sin(time * 80) * 0.005; 
+        truck.position.y = Math.sin(time * 15) * 0.015 + Math.sin(time * 80) * 0.005;
         cabGroup.rotation.x = Math.sin(time * 10) * 0.005 + (Math.random() - 0.5) * 0.002;
         
         // Intro pulse effect on wireframes
@@ -1568,6 +1638,72 @@ export default function App() {
 
         liquid.scale.y = 0.85 + Math.sin(time * 2) * 0.02;
         liquid.position.y = -0.05 + Math.sin(time * 2) * 0.01;
+
+        // === TAIL LIGHT BLINKING ANIMATION ===
+        // Slow blink pattern: ON for 2s, OFF for 0.5s
+        const blinkCycle = time % 2.5; // 2.5 second cycle
+        const isLightOn = blinkCycle < 2.0; // ON for 2 seconds, OFF for 0.5 seconds
+        
+        // Smooth fade in/out
+        let lightIntensity = 1.0;
+        if (blinkCycle >= 1.9 && blinkCycle < 2.0) {
+            // Fade out
+            lightIntensity = (2.0 - blinkCycle) / 0.1;
+        } else if (blinkCycle >= 2.0 && blinkCycle < 2.1) {
+            // Fade in
+            lightIntensity = (blinkCycle - 2.0) / 0.1;
+        } else if (blinkCycle >= 2.0) {
+            lightIntensity = 0;
+        }
+        
+        // Update tail light materials
+        tailLights.forEach(light => {
+            const mat = light.material as THREE.MeshStandardMaterial;
+            mat.emissiveIntensity = 3 * lightIntensity;
+        });
+        
+        // Update tail light glow
+        tailLightGlows.forEach(glow => {
+            glow.intensity = 2 * lightIntensity;
+        });
+
+        // === HEADLIGHT FLASH ANIMATION (Short/Long Pattern) ===
+        // Pattern: Short flash (0.2s), pause (0.3s), Long flash (0.8s), pause (2s)
+        // Total cycle: 3.3 seconds
+        const flashCycle = time % 3.3;
+        let headlightIntensity = 1.0; // Base intensity (always on)
+        let flashBoost = 0; // Extra intensity for flash effect
+        
+        if (flashCycle < 0.2) {
+            // Short flash
+            flashBoost = 2.0;
+        } else if (flashCycle >= 0.5 && flashCycle < 1.3) {
+            // Long flash
+            flashBoost = 2.0;
+        } else if (flashCycle >= 0.15 && flashCycle < 0.2) {
+            // Fade out short flash
+            flashBoost = 2.0 * ((0.2 - flashCycle) / 0.05);
+        } else if (flashCycle >= 1.25 && flashCycle < 1.3) {
+            // Fade out long flash
+            flashBoost = 2.0 * ((1.3 - flashCycle) / 0.05);
+        } else if (flashCycle >= 0.0 && flashCycle < 0.05) {
+            // Fade in short flash
+            flashBoost = 2.0 * (flashCycle / 0.05);
+        } else if (flashCycle >= 0.5 && flashCycle < 0.55) {
+            // Fade in long flash
+            flashBoost = 2.0 * ((flashCycle - 0.5) / 0.05);
+        }
+        
+        // Update headlight materials
+        headlights.forEach(light => {
+            const mat = light.material as THREE.MeshStandardMaterial;
+            mat.emissiveIntensity = 5 + (flashBoost * 3); // Base 5 + flash boost
+        });
+        
+        // Update headlight spotlights
+        headlightSpots.forEach(spot => {
+            spot.intensity = 300 + (flashBoost * 150); // Base 300 + flash boost
+        });
 
         const t = scrollRef.current;
         
